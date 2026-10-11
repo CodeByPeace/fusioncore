@@ -21,6 +21,7 @@ SCRIPTS = [
     "make_paper_figures",
     "fork_diff",
     "compare_runs",
+    "score_turn_gate",
 ]
 
 
