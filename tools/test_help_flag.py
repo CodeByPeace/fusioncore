@@ -1,6 +1,7 @@
 """Every tool in SCRIPTS must answer --help with its docstring and reject unknown flags."""
 import contextlib
 import importlib
+import importlib.util
 import io
 import pathlib
 import sys
@@ -36,6 +37,22 @@ class HelpFlag(unittest.TestCase):
                 with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as raised:
                     module.main(["--bogus"])
                 self.assertEqual(raised.exception.code, 2)
+
+
+@unittest.skipUnless(importlib.util.find_spec("rclpy"), "needs ROS 2 (rclpy)")
+class HelpFlagNeedsRos(unittest.TestCase):
+    """Tools that import rclpy at module level, so they cannot join SCRIPTS."""
+
+    def test_gcs_help_exits_zero_and_unknown_flag_exits_two(self):
+        module = importlib.import_module("fusioncore_gcs")
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out), self.assertRaises(SystemExit) as raised:
+            module.main(["--help"])
+        self.assertEqual(raised.exception.code, 0)
+        self.assertIn(module.__doc__.strip().splitlines()[0], out.getvalue())
+        with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as raised:
+            module.main(["--bogus"])
+        self.assertEqual(raised.exception.code, 2)
 
 
 if __name__ == "__main__":
