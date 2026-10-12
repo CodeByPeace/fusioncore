@@ -20,6 +20,7 @@ import threading
 import time
 from collections import deque
 import math
+import argparse
 
 # ── Palette ───────────────────────────────────────────────────────────────────
 BG       = '#02060e'
@@ -508,7 +509,12 @@ def build():
     plt.show()
     return ani
 
-def main():
+def main(argv=None):
+    parser = argparse.ArgumentParser(
+        description=__doc__,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser.parse_args(argv)
     rclpy.init()
     node = GCSNode()
     threading.Thread(target=spin_node, args=(node,), daemon=True).start()
