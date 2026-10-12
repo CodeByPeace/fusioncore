@@ -20,6 +20,7 @@ SCRIPTS = [
     "make_figures",
     "make_paper_figures",
     "fork_diff",
+    "compare_runs",
 ]
 
 
