@@ -33,6 +33,7 @@ CHECKS=(
   "check_docs_test_count.py"
   "check_replay_wiring.py"
   "check_readme_benchmark.py --strict"
+  "check_links.py"
 )
 
 pass=0; fail=0; skip=0
