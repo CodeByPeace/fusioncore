@@ -16,6 +16,7 @@ SCRIPTS = [
     "check_docs_test_count",
     "make_figures",
     "make_paper_figures",
+    "fork_diff",
 ]
 
 
