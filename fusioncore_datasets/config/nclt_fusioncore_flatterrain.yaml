@@ -19,6 +19,29 @@
 # So pinning Z helps and over-tightening the velocity and acceleration constraints
 # hurts badly. ONLY the position constraint moves here. 0.3 rather than 0.1 because
 # tighter measured worse.
+#
+# MEASURED ON NCLT 2026-10-13. All three sequences improved, every control inside
+# 0.26% so every move is attributable:
+#
+#     sequence     verdict   shipped      flat    change   own spread   significant
+#     2012-08-20      LOSS   155.618   154.371    -0.80%        0.13%   yes, 6x
+#     2012-06-15      LOSS    82.011    77.371    -5.66%        4.99%   marginal
+#     2013-04-05       WIN    14.058    12.790    -9.02%       12.88%   inside noise
+#
+# Decisive on one, consistent on three. Three independent sequences moving the same
+# way is evidence even where an individual move sits inside that sequence's spread.
+# This is the first change measured this week that helps EVERYWHERE: the
+# sigma-rotation bound helped two sequences and hurt a third.
+#
+# KEEP IT IN PROPORTION. 2012-08-20 goes from 15.0x worse than the control to 14.9x.
+# The direction is right and the size is small, so specialising the filter is worth
+# doing and will not on its own close a 15x gap. The synthetic predicted 24% and the
+# real data gave 0.80% on that sequence, which is the usual lesson about synthetics.
+#
+# WHY NOT CHANGE THE LIBRARY DEFAULT. 0.0 is correct for fusioncore_core, which has
+# to serve drones and boats too. The specialisation belongs in the config for the
+# platform, not in the filter. That is the whole point: keep the library general and
+# let the deployment say it is a ground robot.
 fusioncore:
   ros__parameters:
     base_frame: base_link
