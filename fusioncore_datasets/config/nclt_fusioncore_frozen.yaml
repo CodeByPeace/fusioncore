@@ -27,6 +27,26 @@
 # no true bias, so it was tested against a real one, and against a bad encoder, because
 # a perfect encoder would make "trust the encoder, freeze the gyro bias" win trivially.
 #
+# MEASURED ON NCLT 2026-10-14. The synthetic was right, and on one sequence it
+# UNDERSTATED the gain. Every control held inside 0.5%, so every move is attributable:
+#
+#     sequence     FC shipped   FC frozen    change   verdict was   verdict now
+#     2012-08-20      155.618     157.591    +1.27%       RL +93%       RL +93%
+#     2012-06-15       82.011      32.149   -60.80%       RL +44%     * FC +30% *
+#     2013-04-05       14.058       9.193   -34.61%       FC +79%       FC +86%
+#
+# 2012-06-15 FLIPS from a 44% loss to a 30% win. That is the first time a verdict has
+# moved in FusionCore's favour from a change we made, as opposed to from correcting a
+# measurement. 2013-04-05's win grows from 79% to 86%. 2012-08-20 is unchanged at
+# +1.27%, which is about 10x its 0.13% spread, so very slightly worse and not material
+# next to the other two.
+#
+# WHAT THIS MEANS. Not estimating a state you cannot observe beats estimating it badly.
+# The literature says the same thing: accelerometer bias is completely unobservable in
+# straight motion, and for land vehicles the azimuth and its gyro bias are unobservable
+# in straight motion and under constant acceleration. FusionCore estimates all of them
+# anyway, and r(WZ, B_GZ) = -0.998 is what that costs.
+#
 # TREAT THE SYNTHETIC WITH SUSPICION ANYWAY. On 2026-10-13 the same kind of synthetic
 # predicted a 39.5% gain from the Z constraint on one seed, which fell to 3 of 8 seeds
 # across seeds, while the real NCLT sequences all improved. Synthetic and real disagree
