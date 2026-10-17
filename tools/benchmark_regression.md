@@ -163,3 +163,62 @@ machine, so the load was external. Its control moved 0.02% and its pose count he
 was not starved in output. Attributing the FusionCore move to machine load would repeat
 the 2026-10-08 mistake documented above, where a paired run measured 62 starvations
 against 0 and moved the control 0.20%.
+
+---
+
+## 2026-10-17: no input feature separates the wins from the losses
+
+FusionCore wins 4 of the 9 sequences measured on corrected input and loses 5, with
+baseline accuracy around 7 m on the wins and 23 to 46 m on the losses. That gap is the
+oldest open question here, and no field, platform or vertical claim is supportable until
+it is explained, because without it you cannot say which conditions FusionCore is good
+in.
+
+`tools/winloss_features.py` puts the verdict beside fifteen candidate columns, computed
+from the raw data rather than from a run: motion features from `odometry_mu_100hz.csv`,
+which is what `nclt_player.py` actually feeds the filter, and GNSS-quality features from
+`gps.csv`. It prints an explicit separation check, because a table of 9 rows and 15
+columns invites finding a pattern that is not there.
+
+```
+  sequence     verd        FC       RL |    min  path_m  stop%  nstops | strght%  rot_deg   med_w
+  2012-03-31   WIN       28.5    160.6 |     88    6094    8.1      38 |    44.6    36965   0.064
+  2012-09-28   WIN        8.9     91.9 |     78    5680    5.9      17 |    42.8    34602   0.069
+  2012-10-28   WIN       17.1     25.1 |     86    5821    7.8      33 |    45.6    34034   0.058
+  2013-04-05   WIN        9.2     65.8 |     70    4675    9.8      37 |    48.3    23389   0.049
+  2012-01-08   loss     185.2     22.8 |     94    6545    7.2      24 |    46.1    37565   0.057
+  2012-02-04   loss     147.0    123.1 |     79    5625    6.6      16 |    45.3    32429   0.060
+  2012-05-11   loss       9.6      8.9 |     85    6144    6.0      21 |    42.3    40530   0.074
+  2012-06-15   loss      32.1     45.8 |     55    4129    5.9      14 |    44.9    22593   0.060
+  2012-08-20   loss     157.6     10.4 |     84    6106    6.3      17 |    42.8    35878   0.068
+```
+
+**Every column overlaps. Nothing separates.** Stops, stop count, longest stop, straight
+fraction, total rotation, rotation per metre, median yaw rate, path length, duration, max
+GNSS gap, gaps over 60 s, usable-fix percentage, mode-flip rate and fix count: in all
+fifteen the win range and the loss range intersect, usually heavily. Straight fraction is
+42.8 to 48.3% on the wins and 42.3 to 46.1% on the losses. Median yaw rate is 0.05 to
+0.07 rad/s on both.
+
+**Which makes sense once said out loud: NCLT is one Segway driving one campus across
+fifteen months.** The sequences are near-interchangeable by bulk motion statistics, so
+the thing that turns a 9 m result into a 185 m result is not visible in them.
+
+Three consequences.
+
+**The field question cannot be answered from NCLT.** Picking a vertical needs to know
+which conditions FusionCore is good in, and this dataset does not vary enough in the
+right dimensions to tell you. That has to come from bags off other robots, which makes
+the outstanding asks to Swap Robotics, Joseph at Upside and Aigen the path to the answer
+rather than a parallel activity.
+
+**The remaining hypothesis is filter-internal, not conditional.** FusionCore is 2.5x to
+7.6x worse in the MEDIAN on the losses, not only in RMSE (23.37 against 9.18, 33.65
+against 4.44, 46.12 against 22.09), so it is holding a sustained wrong state rather than
+taking one excursion and recovering. A sustained offset with no input feature to explain
+it points at the filter entering a bad state and staying there, which is #150.
+
+**None of these runs gives the filter much chance to observe bias while stationary.**
+Contiguous stops of 2 s or longer total 59 to 183 s out of 55 to 94 minutes, on every
+sequence, wins and losses alike. So "it stopped more often" cannot be the explanation
+either, and ZUPT is doing less work here than its presence suggests.
