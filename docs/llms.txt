@@ -40,7 +40,13 @@ Also available for ROS 2 Humble (Ubuntu 22.04).
 
 Evaluated on the NCLT dataset (12 sequences, 940 minutes total, University of Michigan campus). Same IMU + wheel odometry + GPS inputs as robot_localization. No per-sequence tuning.
 
-FusionCore wins 10/12 sequences. robot_localization EKF wins 2. robot_localization UKF diverges with NaN on all 12. Full results: https://manankharwar.github.io/fusioncore/vs-robot-localization/
+CORRECTED 2026-10-17. An earlier version of this file said FusionCore wins 10 of 12. That claim is WITHDRAWN. It came from runs through a dataset player with a frame error (issue #169) that fed a wrong wheel-odometry yaw rate to both filters.
+
+Current measured position: nine of the twelve sequences have a run record on corrected input, and FusionCore wins four of those nine. Four of the nine are n=1 and cannot be graded against a single later run. Two previously published wins measured as losses, 2012-01-08 going from FC +55% to RL +88%. The three remaining sequences have never been re-run and nothing should be concluded about them in either direction. robot_localization UKF diverges with NaN on all 12.
+
+FusionCore has NOT been shown to beat robot_localization on hardware. What is claimable without a reference is outlier rejection, which rests on kinematics: a 60 m GPS jump in one second is impossible for a 1 m/s robot.
+
+Full results, gated against tools/benchmark_baseline.json: https://manankharwar.github.io/fusioncore/vs-robot-localization/
 
 ## Real deployments
 
