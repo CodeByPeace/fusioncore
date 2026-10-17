@@ -29,18 +29,31 @@ are unobservable in straight motion and under constant acceleration.
 
 ## What the profiles are worth
 
-Measured on NCLT at 1x, every robot_localization control holding inside 0.5%, so every
-change is attributable:
+Measured on NCLT at 1x. The control column is robot_localization on the same run: it
+consumes the same input and runs none of this code, so a control that holds still is
+what makes the FusionCore change attributable.
 
-| sequence | shipped | `ground_robot` | change | verdict was | verdict now |
-|---|---|---|---|---|---|
-| 2012-06-15 | 82.011 | **32.149** | **-60.80%** | RL +44% | **FC +30%** |
-| 2013-04-05 | 14.058 | **9.193** | **-34.61%** | FC +79% | **FC +86%** |
-| 2012-08-20 | 155.618 | 157.591 | +1.27% | RL +93% | RL +93% |
+| sequence | shipped | `ground_robot` | control moved | change | verdict was | verdict now |
+|---|---|---|---|---|---|---|
+| 2012-06-15 | 82.011 | **32.149** | -0.05% | **-60.80%** | RL +44% | **FC +30%** |
+| 2013-04-05 | 14.058 | **9.193** | +0.50% | **-34.61%** | FC +79% | **FC +86%** |
+| 2012-08-20 | 155.618 | 157.591 | +0.04% | +1.27% | RL +93% | RL +93% |
+| 2012-09-28 | 18.594 | **8.872** | +11.23% | **-52.29%** | FC +77% | **FC +90%** |
 
 2012-06-15 crosses from a loss to a win. 2012-08-20 is about 10x its own 0.13% spread
 worse, which is small and real; the profile is not uniformly better and this file is
 not going to pretend otherwise.
+
+2012-09-28 is the weakest of the four and is listed with its control move rather than
+without it. An 11.23% control move would normally void a comparison; this sequence has
+a measured control-side spread of 11.05%, so the move is consistent with its own noise
+instead of with a changed input. It was a win before and after regardless. The other
+three rows need no such argument.
+
+The same bundles are reachable as one parameter, `platform.profile: ground_robot` or
+`ground_robot_flat`, documented in `docs/configuration.md`. `tools/test_profiles.py`
+pins the node's table to these files so the two forms cannot drift apart and hand two
+users two different filters.
 
 ## Choosing one
 
@@ -52,6 +65,65 @@ not going to pretend otherwise.
   parking-lot and field terrain. Do not use it where the robot genuinely climbs.
 - **No profile** is the right choice for drones, boats, and anything that leaves the
   ground plane. The library defaults stay general on purpose.
+
+## Measured on hardware, 2026-10-17: it does not hurt, and it does not help here
+
+Three rover bags, replayed offline through `fusioncore_core` with `hardware/replay.cpp`
+(not the live node, so these closures are not the field numbers). The rover's own
+frozen config, with the five keys the profile sets removed so the profile could supply
+them. Loop closure in metres, 10 s stillness window:
+
+| bag | driven | `general` | `ground_robot` | `ground_robot_flat` |
+|---|---|---|---|---|
+| 20260927_1257 | 106.5 m | 1.10 | 1.08 | 1.09 |
+| 20260927_1307 | 104.9 m | 0.34 | 0.30 | 0.30 |
+| 20260926_1755 | 103.8 m | 0.78 | 0.78 | 0.79 |
+
+Every move is far smaller than the receiver's own 2.6 m sigma, so none of it is a
+measurement of accuracy. **What that does establish is that the profile is safe on real
+hardware**, which was the open question: freezing seven states did not break anything
+on three real bags.
+
+The same three logs with a 120 s GNSS blackout cut into them, every other sensor
+untouched, to reach the regime the NCLT gains came from:
+
+| bag | metric | `general` | `ground_robot` | change |
+|---|---|---|---|---|
+| 20260927_1257 | closure | 1.15 | 1.09 | -5% |
+| 20260927_1307 | closure | 0.34 | 0.31 | -9% |
+| 20260926_1755 | closure | 0.77 | 0.85 | +10% |
+| 20260927_1257 | path length | 198.1 | 189.7 | **-4.3%** |
+| 20260927_1307 | path length | 192.2 | 170.9 | **-11.1%** |
+| 20260926_1755 | path length | 180.7 | 175.3 | **-3.0%** |
+
+Closure is mixed and inside the noise. Path length falls on 3 of 3, which is the same
+direction as the NCLT result (less excess motion), and path length is the metric that
+can see a filter wandering and coming back.
+
+**Why the NCLT-scale gain does not appear, stated as a hypothesis and not a result:**
+these runs are about 105 m over 350 to 500 s with continuous 1 Hz fixes, so a 120 s
+blackout covers roughly 30 m of driving. NCLT 2012-06-15 is 7.5 km with a 461 s
+blackout. The unobservable pairs need time and distance with nothing pinning them, and
+this course does not provide either. Testing that properly needs a longer course or a
+real canopy, not another replay.
+
+## A trap worth knowing before you set this
+
+The rover's own config spells out all four process noises at exactly their library
+defaults:
+
+```yaml
+    ukf.q_acceleration: 1.0
+    ukf.q_gyro_bias: 1.0e-5
+    ukf.q_accel_bias: 1.0e-5
+    ukf.q_encoder_wz_bias: 1.0e-7
+```
+
+A profile only supplies defaults, so on that config it would correctly keep all four
+and log `4 kept`, applying almost nothing. Writing a value out, even the value the node
+already uses, is indistinguishable from meaning it. **If you adopt a profile, delete
+the lines you are handing over to it**, and read the node's log to confirm what it
+applied rather than assuming.
 
 ## Before you trust it on your robot
 

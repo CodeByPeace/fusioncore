@@ -13,6 +13,7 @@ measured on that hardware. A profile is the same shape of risk with a friendlier
 """
 import os
 import pathlib
+import re
 import sys
 import unittest
 
@@ -109,6 +110,93 @@ class BenchmarkMatchesTheProfile(unittest.TestCase):
                           f"not describe the shipped profile")
             self.assertEqual(float(v), float(bench[k]),
                              f"{k}: profile ships {v}, benchmark measured {bench[k]}")
+
+
+class TheNodeTableMatchesTheProfiles(unittest.TestCase):
+    """platform.profile in the node must set exactly what the YAML files set.
+
+    There are now two ways to ask for the same thing: load ground_robot.yaml, or set
+    platform.profile to ground_robot. If they drift apart, two users following two
+    pieces of documentation get two different filters and neither of them is wrong.
+
+    The third column of the node's table is the subtler risk. It holds what the node
+    DECLARES, and it is how "the user set this" is told apart from "nobody set this".
+    If a declare_parameter default changes and that column does not, the profile reads
+    every value as user-supplied, applies nothing, and logs that it kept everything.
+    It would be a no-op that announces success, which is the worst version of this bug
+    and would not show up in any other test here.
+    """
+
+    NODE = pathlib.Path(ccp.NODE)
+
+    def node_table(self):
+        """The {name, profile value, declared value} rows out of apply_platform_profile."""
+        src = self.NODE.read_text()
+        body = re.search(r"std::vector<Row> defaults = \{(.*?)\n    \};", src, re.S)
+        self.assertIsNotNone(body, "could not find the Row table; the parser is stale")
+        rows = re.findall(r'\{\s*"([^"]+)"\s*,\s*([-\d.e+]+)\s*,\s*([-\d.e+]+)\s*\}',
+                          body.group(1))
+        self.assertGreaterEqual(len(rows), 7, "parsed too few rows out of the node")
+        flat = re.search(r'defaults\.push_back\(\{\s*"([^"]+)"\s*,\s*([-\d.e+]+)\s*,'
+                         r'\s*([-\d.e+]+)\s*\}\)', src)
+        self.assertIsNotNone(flat, "could not find the flat-only row")
+        base = {n: (float(pv), float(dv)) for n, pv, dv in rows}
+        return base, {flat.group(1): (float(flat.group(2)), float(flat.group(3)))}
+
+    def declared_defaults(self):
+        src = self.NODE.read_text()
+        out = {}
+        for name, val in re.findall(
+                r'declare_parameter\(\s*"([^"]+)"\s*,\s*([-\d.][-\d.e+]*)\s*\)', src):
+            out[name] = float(val)
+        self.assertGreater(len(out), 40, "could not read the node's declared defaults")
+        return out
+
+    def test_the_node_sets_the_same_values_as_ground_robot_yaml(self):
+        base, _ = self.node_table()
+        yaml_vals = params(PROFILES / "ground_robot.yaml")
+        self.assertEqual(sorted(yaml_vals), sorted(base),
+                         "the node's table and ground_robot.yaml set different parameters")
+        for k, v in yaml_vals.items():
+            self.assertEqual(float(v), base[k][0],
+                             f"{k}: the YAML ships {v}, platform.profile applies {base[k][0]}")
+
+    def test_the_flat_row_matches_ground_robot_flat_yaml(self):
+        base, extra = self.node_table()
+        yaml_vals = params(PROFILES / "ground_robot_flat.yaml")
+        combined = dict(base)
+        combined.update(extra)
+        self.assertEqual(sorted(yaml_vals), sorted(combined),
+                         "the node's flat table and ground_robot_flat.yaml differ")
+        for k, v in yaml_vals.items():
+            self.assertEqual(float(v), combined[k][0],
+                             f"{k}: the YAML ships {v}, platform.profile applies {combined[k][0]}")
+
+    def test_the_declared_column_is_what_the_node_declares(self):
+        # The one that catches a silent no-op. See the class docstring.
+        base, extra = self.node_table()
+        declared = self.declared_defaults()
+        rows = dict(base)
+        rows.update(extra)
+        for name, (_, claimed) in rows.items():
+            self.assertIn(name, declared,
+                          f"{name} is in the profile table but is not declared with a "
+                          f"numeric default")
+            self.assertEqual(declared[name], claimed,
+                             f"{name}: the node declares {declared[name]} but the profile "
+                             f"table says {claimed}, so an unset value would be read as "
+                             f"user-supplied and the profile would apply nothing")
+
+    def test_the_profile_actually_changes_every_value(self):
+        # A row whose profile value equals its declared default does nothing and should
+        # be deleted rather than left looking meaningful.
+        base, extra = self.node_table()
+        rows = dict(base)
+        rows.update(extra)
+        for name, (want, declared) in rows.items():
+            self.assertNotEqual(want, declared,
+                                f"{name} sets the value the node already declares, so the "
+                                f"row is dead weight")
 
 
 if __name__ == "__main__":

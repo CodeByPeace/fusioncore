@@ -99,6 +99,97 @@ public:
 
   // ─── Lifecycle: Configure ──────────────────────────────────────────────────
 
+  // Apply a platform profile as DEFAULTS, never as overrides.
+  //
+  // The layering matters and is easy to get backwards. A profile says "on this kind
+  // of robot these states are not worth estimating". An explicit parameter says "I
+  // know what I am doing on this particular robot". The explicit one must win, or the
+  // profile becomes a trap: a user sets a value, sees it ignored, and has no way to
+  // tell why. The live value is compared against the declared default, as distinct
+  // from parameter_overrides(), which does not see command-line -p values at all.
+  //
+  // Everything is logged, both what the profile supplied and what the user overrode.
+  // A profile that changes the filter's behaviour without saying so would be the same
+  // failure as a parameter accepted and never read, which this repo has shipped
+  // three times (#129, replay.cpp, and a rover params file keyed to the wrong node).
+  bool apply_platform_profile()
+  {
+    const std::string profile = get_parameter("platform.profile").as_string();
+    if (profile == "general") {
+      RCLCPP_INFO(get_logger(),
+        "Platform profile: general. Every state is estimated. Set platform.profile to "
+        "ground_robot or ground_robot_flat if this robot has wheel encoders and stays "
+        "on the ground; see docs for what that changes and what it measured.");
+      return true;
+    }
+
+    const bool flat = (profile == "ground_robot_flat");
+    if (profile != "ground_robot" && !flat) {
+      RCLCPP_ERROR(get_logger(),
+        "platform.profile '%s' is not a profile. Valid: general, ground_robot, "
+        "ground_robot_flat. Refusing to configure rather than silently running "
+        "'general', because you asked for something specific and did not get it.",
+        profile.c_str());
+      return false;
+    }
+
+    // Each row is {name, what the profile wants, what the node declares by default}.
+    // The third column is how we tell "the user set this" from "nobody set this":
+    // if the live value already differs from the declared default, the caller supplied
+    // it and the profile must not touch it.
+    //
+    // get_node_options().parameter_overrides() does NOT work for this. It holds only
+    // overrides passed programmatically through NodeOptions; a --ros-args -p value is
+    // applied by rcl at declare time and never appears there. Using it silently
+    // overwrote an explicitly-set q_gyro_bias in testing, which is exactly the trap
+    // this layering exists to avoid.
+    //
+    // Freezing a bias is only safe because the encoder measures yaw rate with no bias
+    // term and takes over the constraint. Without encoders this profile is wrong.
+    struct Row { const char* name; double profile; double declared; };
+    std::vector<Row> defaults = {
+      {"ukf.q_acceleration",              0.0,    1.0   },
+      {"ukf.q_accel_bias",                0.0,    1.0e-5},
+      {"ukf.q_gyro_bias",                 0.0,    1.0e-5},
+      {"ukf.q_encoder_wz_bias",           0.0,    1.0e-7},
+      {"imu.gyro_bias_initial_sigma",     1.0e-6, 0.175 },
+      {"imu.accel_bias_initial_sigma",    1.0e-6, 0.30  },
+      {"encoder.wz_scale_initial_sigma",  1.0e-6, 0.30  },
+    };
+    if (flat) defaults.push_back({"ground_constraint.z_position_sigma", 0.3, 0.0});
+
+    int applied = 0, kept = 0;
+    for (const auto& row : defaults) {
+      if (!has_parameter(row.name)) {
+        RCLCPP_ERROR(get_logger(),
+          "platform.profile '%s' wants to set '%s', which this node does not declare. "
+          "The profile and the node have drifted apart; refusing to configure.",
+          profile.c_str(), row.name);
+        return false;
+      }
+      const double live = get_parameter(row.name).as_double();
+      const bool user_set = std::abs(live - row.declared) >
+                            1e-12 * std::max(1.0, std::abs(row.declared));
+      if (user_set) {
+        RCLCPP_INFO(get_logger(), "  %-34s %-10g KEPT (you set it, profile wanted %g)",
+                    row.name, live, row.profile);
+        ++kept;
+        continue;
+      }
+      set_parameter(rclcpp::Parameter(row.name, row.profile));
+      RCLCPP_INFO(get_logger(), "  %-34s %-10g from profile", row.name, row.profile);
+      ++applied;
+    }
+
+    RCLCPP_INFO(get_logger(),
+      "Platform profile: %s. %d parameter(s) supplied, %d kept from your config. "
+      "This stops the filter estimating states a wheeled robot cannot observe. It "
+      "REQUIRES wheel encoders%s.",
+      profile.c_str(), applied, kept,
+      flat ? ", and assumes the ground is flat" : "");
+    return true;
+  }
+
   CallbackReturn on_configure(const rclcpp_lifecycle::State &)
   {
     RCLCPP_INFO(get_logger(), "Configuring FusionCore...");
@@ -591,6 +682,42 @@ public:
     declare_parameter("ukf.q_encoder_wz_bias",   1e-7);
     declare_parameter("ukf.max_sigma_rotation_deg", 0.0);
     declare_parameter("ukf.max_sigma_rotation_relax_s", 0.0);
+
+    // WHAT PLATFORM IS THIS? The filter cannot work that out, and the answer decides
+    // which states are worth estimating. A ground robot with wheel encoders cannot
+    // observe its accelerometer bias in straight motion and does not need to: the
+    // encoder measures body velocity directly and carries the constraint instead.
+    // Estimating it anyway costs accuracy, because WZ and B_GZ then slide along an
+    // unobservable line at r = -0.998 and anything integrating WZ alone inherits
+    // the error.
+    //
+    //   general           estimate everything. Correct for drones, boats, handhelds,
+    //                     and anything that leaves the ground plane. The default, so
+    //                     this parameter changes nothing unless you set it.
+    //   ground_robot      REQUIRES WHEEL ENCODERS. Stops estimating acceleration and
+    //                     the bias states.
+    //   ground_robot_flat ground_robot plus a Z-position constraint, for terrain that
+    //                     really is flat: campus, warehouse, yard, most field work.
+    //
+    // Measured on NCLT at 1x. The last column is how far the robot_localization control
+    // moved on the same run, which is what makes the change attributable: it reads the
+    // same input and runs none of this code.
+    //   2012-06-15   82.011 -> 32.149   -60.8%   ctrl -0.05%   a 44% loss becomes a 30% win
+    //   2013-04-05   14.058 ->  9.193   -34.6%   ctrl +0.50%
+    //   2012-08-20  155.618 -> 157.591   +1.3%   ctrl +0.04%   worse, so it is not uniform
+    //   2012-09-28   18.594 ->  8.872   -52.3%   ctrl +11.2%   weak: see the note below
+    //
+    // That 2012-09-28 control move would normally void the row. It is kept because this
+    // sequence has a measured control-side spread of 11.05% of its own, so the move is
+    // consistent with its noise rather than with a changed input, and it was a win
+    // either way. Four of twelve sequences measured, no hardware bag yet.
+    //
+    // A profile only ever supplies DEFAULTS. Anything you set explicitly wins, and the
+    // node logs every value it supplied and every one you overrode, because a setting
+    // that changes behaviour silently is worse than no setting at all.
+    declare_parameter("platform.profile", std::string("general"));
+
+    if (!apply_platform_profile()) return CallbackReturn::FAILURE;
 
     base_frame_   = get_parameter("base_frame").as_string();
     odom_frame_   = get_parameter("odom_frame").as_string();
