@@ -84,5 +84,32 @@ class Profiles(unittest.TestCase):
             self.assertLess(float(p[k]), 1e-4, f"{k} must be pinned, not merely small")
 
 
+class BenchmarkMatchesTheProfile(unittest.TestCase):
+    """The NCLT A/B config must set exactly what ground_robot_flat ships.
+
+    The profile's entire claim is a measurement: 2012-06-15 going from 82.011 to
+    32.149 and crossing from a 44% loss to a 30% win. That claim is only honest if the
+    run that produced it used the settings the profile hands to a user. If the two
+    drift apart, the README is quoting numbers for a configuration nobody ships.
+
+    This is cheap to check and silent to get wrong, which is the same shape as the
+    README benchmark table before #174 added a checker for it.
+    """
+
+    BENCH = pathlib.Path(__file__).resolve().parent.parent / \
+        "fusioncore_datasets" / "config" / "nclt_fusioncore_frozen.yaml"
+
+    def test_the_benchmark_config_sets_exactly_the_profile_values(self):
+        self.assertTrue(self.BENCH.exists(), f"missing {self.BENCH}")
+        prof = params(PROFILES / "ground_robot_flat.yaml")
+        bench = yaml.safe_load(self.BENCH.read_text())["fusioncore"]["ros__parameters"]
+        for k, v in prof.items():
+            self.assertIn(k, bench,
+                          f"the benchmark does not set {k}, so the measured numbers do "
+                          f"not describe the shipped profile")
+            self.assertEqual(float(v), float(bench[k]),
+                             f"{k}: profile ships {v}, benchmark measured {bench[k]}")
+
+
 if __name__ == "__main__":
     unittest.main()
