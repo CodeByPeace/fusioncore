@@ -229,6 +229,7 @@ void FusionCore::reset_parked_gnss_evidence() {
   gnss_parked_inflation_      = 1.0;
   parked_ref_x_ = parked_ref_y_ = 0.0;
   parked_path_len_ = 0.0;
+  parked_fix_type_ = sensors::GnssFixType::NO_FIX;
   parked_seg_n_ = 0;
 }
 
@@ -1864,6 +1865,19 @@ bool FusionCore::apply_gnss_update(
   }
 
   if (zupt_holds_pos_noise_ && config_.zupt_gnss_noise_scale > 1.0) {
+    // A window that spans a solution-type change is averaging two different error
+    // processes. Standalone, SBAS, DGNSS, RTK float and RTK fixed each have their own
+    // magnitude AND their own correlation time, so the r measured across a switch
+    // describes neither side of it. Start again rather than carry it over.
+    //
+    // This is not hypothetical on the rover: the same receiver measured 160x more
+    // smoothed than it declared on one pass and 13.6x more optimistic than it
+    // declared after it picked up SBAS later the same day.
+    if (parked_fix_n_ > 0.0 && fix.fix_type != parked_fix_type_) {
+      reset_parked_gnss_evidence();
+    }
+    parked_fix_type_ = fix.fix_type;
+
     const std::array<double, 3> z{fix.x, fix.y, fix.z};
     parked_fix_n_ += 1.0;
     for (int k = 0; k < 3; ++k) {

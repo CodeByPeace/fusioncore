@@ -1269,6 +1269,13 @@ private:
   // nothing about a receiver that is moving.
   void reset_parked_gnss_evidence();
 
+  // Which GNSS solution type the parked-evidence window is accumulating. The error
+  // process differs per mode (standalone, SBAS, DGNSS, RTK float, RTK fixed, PPP), so
+  // a window that spans a mode switch is averaging two different processes and the
+  // lag-1 correlation it reports describes neither. Suggested by a Septentrio
+  // integrator on the ROS Discourse thread this estimator came from.
+  sensors::GnssFixType parked_fix_type_ = sensors::GnssFixType::NO_FIX;
+
   // GNSS fixes seen while the wheels confirm the robot is parked. All of them
   // sample the same physical point, so their spread and how strongly one fix
   // predicts the next are direct measurements of the receiver, not estimates.
