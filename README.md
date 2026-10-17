@@ -6,11 +6,43 @@
 [![Docs](https://img.shields.io/badge/docs-manankharwar.github.io%2Ffusioncore-blue)](https://manankharwar.github.io/fusioncore/)
 [![Newsletter](https://img.shields.io/badge/newsletter-subscribe-orange)](https://manankharwar.substack.com)
 
-**A 23-state UKF for outdoor robots: IMU, wheel encoders, GPS and visual SLAM at 100 Hz. Two numbers from your IMU datasheet instead of days of tuning, and when the estimate goes wrong it names the sensor and the reason instead of drifting silently. Apache 2.0, ROS 2 Jazzy and Humble, and the filter itself is a plain C++ library with no ROS dependency.**
+**Sensor fusion for outdoor wheeled ground robots that lose GPS. IMU, wheel encoders, GPS and visual SLAM at 100 Hz in a 23-state UKF. Two numbers from your IMU datasheet instead of days of tuning, and when the estimate goes wrong it names the sensor and the reason instead of drifting silently. Apache 2.0, ROS 2 Jazzy and Humble, and the filter itself is a plain C++ library with no ROS dependency.**
 
 <img width="1080" height="608" alt="586785007-e1e07cfb-74e0-48b9-9bfd-32b68ee5a6ef" src="https://github.com/user-attachments/assets/d59b74ec-af94-4cb1-ab19-e5310a5d138b" />
 
 ---
+
+---
+
+## What this is for
+
+A **wheeled robot, outdoors, with wheel odometry, that loses GPS.** Differential drive,
+skid steer, tracked or Ackermann. That is the platform every number on this page was
+measured on: NCLT is a wheeled Segway and the hardware runs are a four-wheeled rover.
+
+You tell the filter which platform it is, in one line, and that decides which states it
+bothers to estimate:
+
+```yaml
+fusioncore:
+  ros__parameters:
+    platform.profile: ground_robot_flat   # general | ground_robot | ground_robot_flat
+```
+
+A 23-state filter can estimate more than a wheeled robot can observe. The gyro measures
+`WZ + B_GZ` and the accelerometer measures `AX + B_AX + gravity`, so those pairs are not
+separately observable, and estimating them anyway costs accuracy: measured
+`r(WZ, B_GZ) = -0.998`. On a robot with encoders you do not need to, because the encoder
+measures yaw rate with no bias term and carries the constraint instead. Declaring the
+platform is what lets the filter stop guessing. See
+[Declaring the platform](https://manankharwar.github.io/fusioncore/configuration/#declaring-the-platform).
+
+**Not built for drones, boats, legged robots or mecanum platforms.** The library will run
+on them: the core is full 3D, there is no planar assumption, and `platform.profile:
+general` exists precisely so nothing is frozen that those platforms need. But nothing
+here is tuned or benchmarked for them, the profiles do not apply, and the non-holonomic
+constraint is wrong for anything that can move sideways on purpose. If that is your
+platform, this is not the filter with evidence behind it.
 
 ## Start without installing anything
 

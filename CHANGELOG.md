@@ -8,6 +8,56 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **`platform.profile`: the deployment declares what it can observe.** One parameter,
+  values `general` (the default, which changes nothing), `ground_robot` and
+  `ground_robot_flat`. A 23-state filter can estimate more than a wheeled robot can
+  observe: the gyro measures `WZ + B_GZ` and the accelerometer measures
+  `AX + B_AX + gravity`, so those pairs are not separately observable, and estimating
+  them anyway costs accuracy (measured `r(WZ, B_GZ) = -0.998`). On a robot with encoders
+  the encoder measures yaw rate with no bias term and carries the constraint instead.
+
+  Measured on NCLT at 1x, with the robot_localization control on the same run shown
+  because it reads the same input and runs none of this code:
+
+  ```
+    2012-06-15   82.011 -> 32.149   -60.8%   ctrl -0.05%   a 44% loss becomes a 30% win
+    2013-04-05   14.058 ->  9.193   -34.6%   ctrl +0.50%
+    2012-08-20  155.618 -> 157.591   +1.3%   ctrl +0.04%   worse, so it is not uniform
+    2012-09-28   18.594 ->  8.872   -52.3%   ctrl +11.2%   weak, that control move is
+                                                           inside the sequence's own
+                                                           11.05% control spread
+  ```
+
+  Four of twelve sequences measured. Measured on three rover bags offline: closure moved
+  less than the receiver's own 2.6 m sigma in every arm, so it is not an accuracy result
+  on hardware, but it establishes that freezing seven states broke nothing on real data.
+  Excess path length fell 3 to 11% on 3 of 3 with a 120 s GNSS blackout cut in.
+
+  **A profile only supplies DEFAULTS.** Anything set explicitly wins and the node logs
+  both what it supplied and what it kept. One consequence worth knowing: a config that
+  writes a value out, even the value the node would have used anyway, blocks the profile
+  for that key. Delete what you hand to a profile. An unknown profile name refuses to
+  configure rather than silently falling back to `general`.
+
+  No library default changed. `0.0` is the right process noise for `fusioncore_core`,
+  which has to serve platforms that leave the ground plane, and the equivalent parameter
+  bundles still ship as YAML in `fusioncore_datasets/config/profiles/`.
+  `tools/test_profiles.py` pins the node's table to those files so the two forms cannot
+  drift apart and hand two users different filters.
+
+### Changed
+
+- **Scope stated explicitly: FusionCore is for outdoor wheeled ground robots that lose
+  GPS.** Differential drive, skid steer, tracked or Ackermann. That is the platform every
+  published number was measured on (NCLT is a wheeled Segway, the hardware runs are a
+  four-wheeled rover). Not built for drones, boats, legged robots or mecanum platforms:
+  the library runs on them and `platform.profile: general` freezes nothing, but nothing
+  is tuned or benchmarked for them and the non-holonomic constraint is wrong for anything
+  that can move sideways on purpose. No code changed; this was always what the evidence
+  covered and the README did not say so.
+
 ### Documentation
 
 - **The published NCLT table overstated FusionCore on all three rows that have since

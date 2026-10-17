@@ -1,6 +1,18 @@
 # FusionCore
 
-**ROS 2 UKF sensor fusion for robots that run in the real world. IMU + wheel encoders + GPS at 100 Hz. Two numbers from your IMU datasheet instead of days of tuning, and when it drifts it names the sensor and the reason. Handles bad calibration, timestamp jitter, delayed GPS, wheel slip, and ARM hardware out of the box. Apache 2.0.**
+**ROS 2 sensor fusion for outdoor wheeled ground robots that lose GPS. IMU + wheel encoders + GPS at 100 Hz in a 23-state UKF. Two numbers from your IMU datasheet instead of days of tuning, and when it drifts it names the sensor and the reason. Handles bad calibration, timestamp jitter, delayed GPS, wheel slip, and ARM hardware out of the box. Apache 2.0.**
+
+Built and measured for a **wheeled robot, outdoors, with wheel odometry**: differential
+drive, skid steer, tracked or Ackermann. NCLT is a wheeled Segway and the hardware runs
+are a four-wheeled rover, so that is the platform every number here was measured on. You
+declare the platform in one line with `platform.profile` and that decides which states
+the filter estimates, because a 23-state filter can estimate more than a wheeled robot
+can observe. See [Declaring the platform](configuration.md#declaring-the-platform).
+
+**Not built for drones, boats, legged robots or mecanum platforms.** The library runs on
+them (the core is full 3D with no planar assumption, and `platform.profile: general`
+freezes nothing), but nothing here is tuned or benchmarked for them and the
+non-holonomic constraint is wrong for anything that can move sideways on purpose.
 
 [![CI](https://github.com/manankharwar/fusioncore/actions/workflows/ci.yml/badge.svg)](https://github.com/manankharwar/fusioncore/actions/workflows/ci.yml)
 [![arXiv](https://img.shields.io/badge/arXiv-2605.25239-b31b1b)](https://arxiv.org/abs/2605.25239)
