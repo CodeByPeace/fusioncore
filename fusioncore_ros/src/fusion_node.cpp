@@ -111,7 +111,8 @@ public:
   // Everything is logged, both what the profile supplied and what the user overrode.
   // A profile that changes the filter's behaviour without saying so would be the same
   // failure as a parameter accepted and never read, which this repo has shipped
-  // three times (#129, replay.cpp, and a rover params file keyed to the wrong node).
+  // three times (the #126 knob, replay.cpp, and a rover params file keyed to the wrong
+  // node).
   bool apply_platform_profile()
   {
     const std::string profile = get_parameter("platform.profile").as_string();

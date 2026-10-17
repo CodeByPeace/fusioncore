@@ -6,10 +6,11 @@ misspelled or renamed out from under it, ROS ignores the key ENTIRELY and silent
 falls back to the library default. The user sees a profile that loaded without error
 and a filter that is not configured the way the profile says it is.
 
-That failure mode is the most repeated bug in this repo: PR #129 parameterised a dead
-branch, replay.cpp accepted 43 parameters that never reached the filter, and a rover
-params file keyed to the wrong node name silently restored the two worst settings ever
-measured on that hardware. A profile is the same shape of risk with a friendlier name.
+That failure mode is the most repeated bug in this repo: a PR faithfully parameterised
+the confirmation-count knob of issue #126 and the branch behind it turned out to be dead,
+replay.cpp accepted 43 parameters that never reached the filter, and a rover params file
+keyed to the wrong node name silently restored the two worst settings ever measured on
+that hardware. A profile is the same shape of risk with a friendlier name.
 """
 import os
 import pathlib
