@@ -131,6 +131,24 @@ Evaluated against RTK GPS ground truth (Novatel SPAN-CPT RTK mode) using `evo_ap
 | 2013-04-05 | 12.1 m † | +96% better |
 | 2012-08-20 | 98.3 m † | RL wins (adversarial GPS cluster at blackout boundary) |
 
+> **Status, 2026-10-17, and it supersedes every dated note below.** **Nine of the twelve
+> rows now have a run record** on corrected input, and **FusionCore wins four and loses
+> five.** Four rows were added on 2026-10-12 at **n=1 each**, and two of them flip a
+> published win to a loss:
+>
+> | Sequence | Published (May 2026) | Measured 2026-10-12 | |
+> |---|---|---|---|
+> | 2012-01-08 | FC 18.6 m, RL 41.2 m, **FC +55%** | FC 185.2 m, RL 22.8 m, **RL +88%** | flips, the largest flip on record |
+> | 2012-05-11 | FC 9.7 m, RL 11.5 m, **FC +16%** | FC 9.6 m, RL 8.9 m, **RL +7%** | flips, small absolute numbers |
+> | 2012-03-31 | FC 22.0 m, RL 156.5 m, **FC +86%** | FC 28.5 m, RL 160.6 m, **FC +82%** | holds |
+> | 2012-10-28 | FC 15.6 m, RL 56.4 m, **FC +72%** | FC 17.1 m, RL 25.1 m, **FC +32%** | holds, margin shrinks |
+>
+> Each is n=1 with an unknown spread, so none can be graded against a single later run.
+> 2012-02-04 also moved to **n=3** and its spread went from 0.51% to **14.80%** while its
+> control held at 0.02%. **The tables on this page still carry the May 2026 figures for
+> these rows.** The current table is the one in the repository README, gated against
+> `tools/benchmark_baseline.json`.
+>
 > **Status, 2026-10-10.** Five of these twelve rows have been re-measured at n=2 after
 > fixing #169, a frame error in the dataset player that fed a wrong wheel-odometry yaw
 > rate to **both** filters. On those five **FusionCore wins two and loses three**, and

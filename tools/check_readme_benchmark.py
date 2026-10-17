@@ -2,11 +2,18 @@
 """Check that the README benchmark table agrees with the verified baseline.
 
 The README benchmark table carries a Status column. Rows marked
-"re-measured, n=2" must match a verified entry in tools/benchmark_baseline.json
-for the same sequence, with the FC and RL numbers within rounding of the
-baseline value (or the mean of its repeats). Every other row must carry the
-"never verified" mark, because those numbers were measured through a dataset
-player that is now known to have been wrong.
+"re-measured, n=<k>" must match a verified entry in tools/benchmark_baseline.json
+for the same sequence, with the FC and RL numbers within rounding of the baseline
+value (or the mean of its repeats), and the claimed k must be the recorded n.
+Every other row must carry the "never verified" mark AND must have no verified
+baseline entry, because those numbers were measured through a dataset player now
+known to have been wrong.
+
+The second half of that was missing until 2026-10-17 and it mattered. The check
+only looked at rows that CLAIMED to be re-measured, so a row left marked "never
+verified" after its sequence had been measured kept publishing a superseded
+number and this checker reported ok. Four rows sat in that state for five days,
+2012-01-08 among them, where a published FC +55% had become a measured RL +88%.
 
 It exits 1 only with --strict. Without --strict it reports the disagreement but
 returns 0, so a flaky or stale README never fails an unrelated build. It is not
@@ -30,7 +37,7 @@ ROW = re.compile(
     r"^\|\s*(\d{4}-\d{2}-\d{2})\s*\|[^|]*\|[^|]*\|"
     r"\s*\*{0,2}([0-9.]+)\s*m\s*\*{0,2}\s*\|"
     r"\s*\*{0,2}([0-9.]+)\s*m\s*\*{0,2}\s*\|[^|]*\|"
-    r"\s*(re-measured, n=2|‡ never verified)\s*\|"
+    r"\s*(re-measured, n=\d+|‡ never verified)\s*\|"
 )
 
 # Tolerance for "within rounding": a README value may differ from the baseline
@@ -87,11 +94,21 @@ def violations(readme_rows, baseline):
     """Return a list of human-readable violations in the README table."""
     out = []
     for seq, (fc, rl, status) in sorted(readme_rows.items()):
-        if status == "re-measured, n=2":
+        if status.startswith("re-measured"):
             entry = baseline.get(seq)
             if entry is None:
                 out.append(f"{seq}: marked re-measured but has no verified baseline entry")
                 continue
+            # The claimed n must be the recorded n. A row claiming n=2 on a single
+            # run overstates the evidence in exactly the direction that matters, and
+            # 2012-02-04 is the standing proof that n is load bearing: it read 0.51%
+            # at n=2 and 14.80% at n=3.
+            claimed = int(status.split("n=")[1])
+            recorded = entry.get("n")
+            if recorded is not None and claimed != recorded:
+                out.append(
+                    f"{seq}: README claims n={claimed}, the baseline records n={recorded}"
+                )
             fc_cands, rl_cands = _baseline_values(entry)
             if not _within(fc, fc_cands):
                 out.append(
@@ -106,6 +123,19 @@ def violations(readme_rows, baseline):
         else:
             if "never verified" not in status:
                 out.append(f"{seq}: row is not re-measured but lacks the never-verified mark")
+            # The gap this missed: a row stays marked "never verified" after the
+            # sequence HAS been measured, so the README keeps publishing a figure the
+            # record contradicts and this checker reports ok. Four rows sat like that
+            # from 2026-10-12 to 2026-10-17, including 2012-01-08, where the published
+            # FC +55% had become a measured RL +88%.
+            elif seq in baseline:
+                entry = baseline[seq]
+                out.append(
+                    f"{seq}: marked never verified but the baseline has a verified entry "
+                    f"(FC {entry['fusioncore_ate_rmse_3d']} m, "
+                    f"RL {entry['rl_ate_rmse_3d']} m, n={entry.get('n')}), "
+                    f"so the README is publishing a superseded number"
+                )
     return out
 
 

@@ -202,6 +202,28 @@ said so for weeks.
 
 FusionCore against robot_localization on the [NCLT dataset](http://robots.engin.umich.edu/nclt/): same IMU, wheel odometry and GPS, no manual tuning, twelve full-length sequences across all seasons. RL-EKF run with chi-squared-equivalent thresholds at 99.9% confidence.
 
+> **Status, 2026-10-17, and this supersedes the dated notes below it.** **Nine of the
+> twelve rows now have a run record** on corrected input. **FusionCore wins four and loses
+> five.** The four rows added since the 2026-10-10 note were measured on 2026-10-12 at
+> **n=1 each**, and two of them flip a published win to a loss:
+>
+> | Sequence | Published (May 2026) | Measured 2026-10-12 | |
+> |---|---|---|---|
+> | 2012-01-08 | FC 18.6 m, RL 41.2 m, **FC +55%** | FC 185.2 m, RL 22.8 m, **RL +88%** | flips, and it is the largest flip on record here |
+> | 2012-05-11 | FC 9.7 m, RL 11.5 m, **FC +16%** | FC 9.6 m, RL 8.9 m, **RL +7%** | flips, small absolute numbers |
+> | 2012-03-31 | FC 22.0 m, RL 156.5 m, **FC +86%** | FC 28.5 m, RL 160.6 m, **FC +82%** | holds, the largest measured win here |
+> | 2012-10-28 | FC 15.6 m, RL 56.4 m, **FC +72%** | FC 17.1 m, RL 25.1 m, **FC +32%** | holds, margin shrinks |
+>
+> Every one of those is **n=1 with an unknown spread**, so none of them can be graded
+> against a single later run. 2012-02-04 also moved from n=2 to **n=3**, and its recorded
+> spread went from 0.51% to **14.80%** while its control held at 0.02%: a tight spread at
+> n=2 is two samples that landed together, not evidence of a tight spread.
+>
+> The direction of the original error is now consistent across nine rows: **the published
+> table flattered FusionCore on every row where the two differ materially.** The control
+> moved in both directions, which is what places the change in FusionCore's column rather
+> than in the harness.
+>
 > **Status, 2026-10-10.** Five of these twelve rows have been re-measured at n=2 after
 > fixing #169, a frame error in the dataset player that fed a wrong wheel-odometry yaw
 > rate to **both** filters. On those five **FusionCore wins two and loses three**, and
@@ -239,26 +261,27 @@ FusionCore against robot_localization on the [NCLT dataset](http://robots.engin.
 
 | Sequence | Season | Duration | FC ATE RMSE | RL-EKF ATE RMSE | Winner | Status |
 |---|---|---|---|---|---|---|
-| 2012-01-08 | Winter | 92 min | 18.6 m | 41.2 m | FC +55% | ‡ never verified |
-| 2012-02-04 | Winter | 77 min | **153.5 m** | **123.1 m** | **RL +20%** | re-measured, n=2 |
-| 2012-03-31 | Spring | 87 min | 22.0 m | 156.5 m | FC +86% | ‡ never verified |
-| 2012-05-11 | Spring | 84 min | 9.7 m | 11.5 m | FC +16% | ‡ never verified |
+| 2012-01-08 | Winter | 92 min | **185.2 m** | **22.8 m** | **RL +88%** | re-measured, n=1 |
+| 2012-02-04 | Winter | 77 min | **147.0 m** | **123.1 m** | **RL +19%** | re-measured, n=3 |
+| 2012-03-31 | Spring | 87 min | **28.5 m** | **160.6 m** | **FC +82%** | re-measured, n=1 |
+| 2012-05-11 | Spring | 84 min | **9.6 m** | **8.9 m** | **RL +7%** | re-measured, n=1 |
 | 2012-06-15 | Summer | 55 min | **82.0 m** | **45.9 m** | **RL +44%** | re-measured, n=2 |
 | 2012-08-20 | Summer | 83 min | **155.6 m** | **10.4 m** | **RL +93%** | re-measured, n=2 |
 | 2012-09-28 | Fall | 77 min | **18.6 m** | **87.2 m** | **FC +77%** | re-measured, n=2 |
-| 2012-10-28 | Fall | 85 min | 15.6 m | 56.4 m | FC +72% | ‡ never verified |
+| 2012-10-28 | Fall | 85 min | **17.1 m** | **25.1 m** | **FC +32%** | re-measured, n=1 |
 | 2012-11-04 | Fall | 79 min | 60.1 m | 122.0 m | FC +51% | ‡ never verified |
 | 2012-12-01 | Winter | 75 min | 21.0 m | 90.7 m | FC +77% | ‡ never verified |
 | 2013-02-23 | Winter | 78 min | 59.4 m | 82.2 m | FC +28% | ‡ never verified |
 | 2013-04-05 | Spring | 68 min | **14.1 m** | **65.5 m** | **FC +79%** | re-measured, n=2 |
 
-**Read the five bold rows and ignore the rest.** Those five were re-measured on 2026-10-09
-at n=2 each, after a bug fix described below. The seven rows marked ‡ were measured in May
-2026 through a dataset player that is now known to have been wrong, and they have not been
-re-run. They are left in the table only so the correction is visible; **no claim should be
-built on them in either direction.**
+**Read the nine bold rows and ignore the rest.** Those nine have a run record on
+corrected input. Four of them carry **n=1** and a single run cannot be graded: the clearest
+evidence for that is 2012-02-04 itself, which read a 0.51% spread at n=2 and 14.80% at n=3.
+The three rows still marked ‡ were measured in May 2026 through a dataset player now known
+to have been wrong and have not been re-run. They are left in the table only so the
+correction is visible; **no claim should be built on them in either direction.**
 
-**On the five rows that have been measured, FusionCore wins two and loses three.** This
+**On the nine rows that have been measured, FusionCore wins four and loses five.** This
 page previously claimed FusionCore beat robot_localization on ten of twelve. That claim
 was never supported by a verifiable run.
 
