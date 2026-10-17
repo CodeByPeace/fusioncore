@@ -119,3 +119,47 @@ that: "when a repeat disagrees with the first run, the next move is another repe
 theory." A theory was published instead, into this file and into the project memory, within
 an hour of the observation. The repeat cost nothing and settled it.
 
+
+---
+
+## 2026-10-17: 2012-02-04's tight spread was two samples that landed together
+
+`benchmark_baseline.json` recorded 2012-02-04 at **n=2 with a 0.51% spread** and said in
+as many words that "a few percent is meaningful here". A third run with the same shipped
+config, on `6537cf3`, read **134.045** against the recorded 153.883 and 153.097.
+
+```
+  arm                   run 1      run 2      run 3     spread
+  FusionCore          153.883    153.097    134.045    14.80%
+  robot_localization  123.131    123.149    123.121     0.02%
+```
+
+The control holding at 0.02% across all three is what places the 14.80% in FusionCore's
+own column rather than in the harness or the input. **29x wider than the figure this file
+asserted for eight days.**
+
+The lesson is narrow and it is not "FusionCore is noisy". It is that **a tight spread at
+n=2 is not evidence of a tight spread.** Two samples landing close together is the
+expected outcome a good fraction of the time even from a wide distribution, and nothing
+about the first two runs looked wrong. Every n=2 entry in the baseline file carries the
+same exposure, and the ones with a tight recorded spread carry it most, because a tight
+spread is what licenses reading a small delta as real.
+
+Practical consequences, and the first one is the expensive one:
+
+- **Any A/B on 2012-02-04 needs repeats per arm.** At n=1 per arm a 14.8% difference
+  means nothing on this sequence. The 2026-10-16 profile run read 32.422 there, a 78.8%
+  improvement, and it cannot be graded.
+- The gate threshold is 10%, so this sequence cannot be graded by
+  `check_benchmark_regression.py` at all until n grows per arm.
+- **The 272.258 control from that same profile run is a rare failure mode, not the
+  control's operating point.** Three clean runs put it at 123.1. A control that moves
+  121% is still a reason to void a run; it is not a reason to believe the control
+  changed.
+
+One further observation, recorded without being used: run 3 logged **32 robot_localization
+starvation events** against 0 in the first two, clustered and matching no work done on the
+machine, so the load was external. Its control moved 0.02% and its pose count held, so it
+was not starved in output. Attributing the FusionCore move to machine load would repeat
+the 2026-10-08 mistake documented above, where a paired run measured 62 starvations
+against 0 and moved the control 0.20%.
