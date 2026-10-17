@@ -41,8 +41,11 @@ platform is what lets the filter stop guessing. See
 on them: the core is full 3D, there is no planar assumption, and `platform.profile:
 general` exists precisely so nothing is frozen that those platforms need. But nothing
 here is tuned or benchmarked for them, the profiles do not apply, and the non-holonomic
-constraint is wrong for anything that can move sideways on purpose. If that is your
-platform, this is not the filter with evidence behind it.
+constraint is wrong for anything that can move sideways on purpose.
+
+**For those platforms, and for fusing an arbitrary set of sensors, use
+[robot_localization](https://github.com/cra-ros-pkg/robot_localization).** It is mature,
+it is general by design, and it is the right answer where this one has no evidence.
 
 ## Start without installing anything
 

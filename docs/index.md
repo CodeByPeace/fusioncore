@@ -12,7 +12,10 @@ can observe. See [Declaring the platform](configuration.md#declaring-the-platfor
 **Not built for drones, boats, legged robots or mecanum platforms.** The library runs on
 them (the core is full 3D with no planar assumption, and `platform.profile: general`
 freezes nothing), but nothing here is tuned or benchmarked for them and the
-non-holonomic constraint is wrong for anything that can move sideways on purpose.
+non-holonomic constraint is wrong for anything that can move sideways on purpose. For
+those platforms, and for fusing an arbitrary set of sensors,
+[robot_localization](https://github.com/cra-ros-pkg/robot_localization) is the right
+answer: mature, general by design, and it is where this one has no evidence.
 
 [![CI](https://github.com/manankharwar/fusioncore/actions/workflows/ci.yml/badge.svg)](https://github.com/manankharwar/fusioncore/actions/workflows/ci.yml)
 [![arXiv](https://img.shields.io/badge/arXiv-2605.25239-b31b1b)](https://arxiv.org/abs/2605.25239)
