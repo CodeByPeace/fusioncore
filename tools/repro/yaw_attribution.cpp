@@ -90,7 +90,7 @@ int main(int argc, char** argv) {
     }
     if (k%2000==0||k==100){
       const State&s=fc.get_state();
-      printf("  %7.1f %9.2f %9.4f %11.5f %11.4f %11.4f %11.4f\n",
+      printf("  %7.1f %9.2f %9.4f %14.9f %11.4f %11.4f %11.4f\n",
              t, yaw_of(s)*180/M_PI, s.x[VY], s.P(QZ,QZ), d_imu, d_enc, d_gnss);
     }
   }

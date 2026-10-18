@@ -99,10 +99,29 @@ static void attitude_difference(fusioncore::StateVector& diff,
   qs.normalize(); qr.normalize();
   Eigen::Quaterniond dq = qr.conjugate() * qs;
   if (dq.w() < 0.0) { dq.coeffs() *= -1.0; }            // short way round
+
+  // EXACT log map, not the small-angle 2*vec(dq).
+  //
+  // vec(dq) is sin(theta/2)*axis, so 2*vec(dq) equals theta only while theta is
+  // small. apply_attitude_correction below uses the exact exponential map, so the
+  // small-angle inverse made the two maps inverses of each other ONLY near zero.
+  // Measured as a progressively lossy round trip: feeding P(QZ,QZ) back through
+  // generation and differencing returned a ratio of 1.0002 at 1e-4, 0.981 at 1e-2,
+  // 0.926 at 0.04 and 0.604 at 0.25. At 23 states the sigma spread is
+  // sqrt((n+lambda)*P), so a variance of 0.25 means sigma points sitting about
+  // 2.4 rad away, exactly where 2*sin(theta/2) badly underestimates theta.
+  // The covariance therefore shrank every time it was rebuilt.
+  const double vnorm = dq.vec().norm();
+  Eigen::Vector3d rv;
+  if (vnorm > 1e-12) {
+    rv = (2.0 * std::atan2(vnorm, dq.w()) / vnorm) * dq.vec();
+  } else {
+    rv = 2.0 * dq.vec();
+  }
   diff[QW] = dq.w() - 1.0;
-  diff[QX] = 2.0 * dq.x();
-  diff[QY] = 2.0 * dq.y();
-  diff[QZ] = 2.0 * dq.z();
+  diff[QX] = rv.x();
+  diff[QY] = rv.y();
+  diff[QZ] = rv.z();
 }
 
 // Apply a correction whose quaternion slots are a local rotation vector.
