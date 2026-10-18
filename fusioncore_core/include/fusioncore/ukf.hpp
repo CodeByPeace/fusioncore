@@ -287,6 +287,40 @@ public:
   // Get current state estimate
   const State& state() const { return state_; }
 
+  // Move the filter to a position it did not believe in, and widen its confidence
+  // to match. This is NOT a measurement update: it is for the case where several
+  // mutually consistent fixes agree with odometry and disagree with the filter,
+  // which means the filter is the wrong one and no amount of gated updating will
+  // argue it round. Cross-covariances are left alone so the next updates can still
+  // correct velocity and attitude through them.
+  void reanchor_position(double x, double y, double z, double sigma_xy, double sigma_z) {
+    state_.x[X] = x; state_.x[Y] = y; state_.x[Z] = z;
+    state_.P(X,X) = std::max(state_.P(X,X), sigma_xy * sigma_xy);
+    state_.P(Y,Y) = std::max(state_.P(Y,Y), sigma_xy * sigma_xy);
+    state_.P(Z,Z) = std::max(state_.P(Z,Z), sigma_z  * sigma_z);
+  }
+
+  // Replace yaw while keeping roll and pitch, and widen the attitude covariance.
+  // Position alone is not enough: 2012-09-28 accepts its fixes at a median
+  // mahalanobis of 0.526 and still fails to recover, because the heading it left
+  // the blackout with is wrong and it walks off again between fixes.
+  void reanchor_yaw(double yaw_rad, double sigma_yaw_rad) {
+    const double qw = state_.x[QW], qx = state_.x[QX];
+    const double qy = state_.x[QY], qz = state_.x[QZ];
+    const double roll  = std::atan2(2*(qw*qx + qy*qz), 1 - 2*(qx*qx + qy*qy));
+    const double pitch = std::asin(std::max(-1.0, std::min(1.0, 2*(qw*qy - qz*qx))));
+    const double cr = std::cos(roll*0.5),  sr = std::sin(roll*0.5);
+    const double cp = std::cos(pitch*0.5), sp = std::sin(pitch*0.5);
+    const double cy = std::cos(yaw_rad*0.5), sy = std::sin(yaw_rad*0.5);
+    state_.x[QW] = cr*cp*cy + sr*sp*sy;
+    state_.x[QX] = sr*cp*cy - cr*sp*sy;
+    state_.x[QY] = cr*sp*cy + sr*cp*sy;
+    state_.x[QZ] = cr*cp*sy - sr*sp*cy;
+    const double v = sigma_yaw_rad * sigma_yaw_rad * 0.25;  // d(quat)/d(yaw) ~ 1/2
+    state_.P(QZ,QZ) = std::max(state_.P(QZ,QZ), v);
+    state_.P(QW,QW) = std::max(state_.P(QW,QW), v);
+  }
+
   // Overwrite the orientation quaternion, leaving every other state and the
   // whole covariance alone. For establishing an attitude the filter never had a
   // measurement of, as opposed to correcting one it did: see

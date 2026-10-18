@@ -1573,6 +1573,107 @@ double FusionCore::xchk_median_deg() const {
 //
 // IMPLAUSIBLE_JUMP deliberately does NOT call this: that gate rejects on physics
 // and must never be able to inflate P, or an outlier could talk its way in.
+
+// Move the filter to where several mutually consistent fixes say it is, when the
+// gate has been refusing them for long enough that it clearly will not come round.
+//
+// The whole safety of this rests on WHAT COUNTS AS EVIDENCE. Agreement with the
+// filter is worthless here, because the filter is the thing in doubt. What is used
+// instead is agreement among the fixes themselves AND agreement with wheel
+// odometry, which the GNSS does not influence. A cluster of outliers can be
+// internally consistent; it cannot also track the encoder.
+//
+// Returns true if it re-anchored.
+bool FusionCore::maybe_reanchor(double timestamp_seconds)
+{
+  if (!config_.gnss_reanchor_enabled) return false;
+  const int need = std::max(3, config_.gnss_reanchor_buffer_n);
+  if ((int)reanchor_buf_.size() < need) return false;
+  // Trigger 1, branch A: the gate is refusing most of what arrives.
+  const int win = std::max(5, config_.gnss_reanchor_window);
+  bool trigger_reject = false;
+  if ((int)reanchor_recent_.size() >= win) {
+    int rej = 0;
+    for (bool r : reanchor_recent_) if (r) ++rej;
+    trigger_reject =
+      (double)rej / reanchor_recent_.size() >= config_.gnss_reanchor_reject_frac;
+  }
+
+  // Trigger 2, branch C: the fixes are being accepted and the filter is still
+  // wrong, which shows up as an offset that keeps pointing the same way. Random
+  // noise cancels over a buffer; a real offset does not.
+  double mx = 0.0, my = 0.0;
+  for (const auto& r : reanchor_buf_) { mx += r.x - r.fx; my += r.y - r.fy; }
+  mx /= reanchor_buf_.size(); my /= reanchor_buf_.size();
+  double spread = 0.0;
+  for (const auto& r : reanchor_buf_)
+    spread += std::hypot((r.x - r.fx) - mx, (r.y - r.fy) - my);
+  spread /= reanchor_buf_.size();
+  const double bias = std::hypot(mx, my);
+  const bool trigger_bias =
+    bias >= config_.gnss_reanchor_bias_m && bias > spread;
+
+  if (!trigger_reject && !trigger_bias) return false;
+  // Time bound. Nothing latches, so normal gating is already back; this only stops
+  // a re-anchor storm while the filter settles.
+  if (timestamp_seconds - reanchor_last_t_ < config_.gnss_reanchor_cooldown_s) return false;
+
+  // Consistency: every fix-to-fix displacement must match the odometry distance
+  // over the same interval. This is the test an outlier cluster fails.
+  // The tolerance has to know about the receiver's own noise. A fixed 4 m was
+  // tried and never fired on anything realistic: at 1 Hz with sigma 3 m fixes the
+  // displacement between two consecutive fixes carries about 4.2 m of noise on
+  // roughly 1 m of motion, so the check failed on healthy data. Scale it.
+  double fix_path = 0.0, odom_path = 0.0;
+  for (size_t i = 1; i < reanchor_buf_.size(); ++i) {
+    const auto& a = reanchor_buf_[i-1];
+    const auto& b = reanchor_buf_[i];
+    const double d_fix  = std::hypot(b.x - a.x, b.y - a.y);
+    const double d_odom = std::abs(b.odom - a.odom);
+    const double noise  = 3.0 * std::hypot(a.sigma, b.sigma);
+    if (std::abs(d_fix - d_odom) > config_.gnss_reanchor_odom_tol_m + noise) return false;
+    fix_path  += d_fix;
+    odom_path += d_odom;
+  }
+  // The NET displacement across the whole buffer is the stronger test: noise
+  // averages down over the span while a real disagreement does not.
+  const double net_fix = std::hypot(reanchor_buf_.back().x - reanchor_buf_.front().x,
+                                    reanchor_buf_.back().y - reanchor_buf_.front().y);
+  const double net_odom = std::abs(reanchor_buf_.back().odom - reanchor_buf_.front().odom);
+  const double net_noise = 3.0 * std::hypot(reanchor_buf_.front().sigma,
+                                            reanchor_buf_.back().sigma);
+  if (std::abs(net_fix - net_odom) > config_.gnss_reanchor_odom_tol_m + net_noise)
+    return false;
+
+  const auto& last  = reanchor_buf_.back();
+  const auto& first = reanchor_buf_.front();
+  const double dt = last.t - first.t;
+  if (dt <= 1e-6) return false;
+
+  ukf_.reanchor_position(last.x, last.y, last.z,
+                         config_.gnss_reanchor_sigma_xy,
+                         config_.gnss_reanchor_sigma_xy * 2.0);
+
+  // Heading too, when the robot is actually moving. Position alone does not fix
+  // 2012-09-28, where fixes are accepted at a median mahalanobis of 0.526 and the
+  // error persists anyway because the heading it left the gap with is wrong.
+  const double speed = odom_path / dt;
+  const double net   = std::hypot(last.x - first.x, last.y - first.y);
+  if (speed >= config_.gnss_reanchor_min_speed && net >= 1.0 &&
+      net >= 0.7 * fix_path) {          // roughly straight, so the track IS the heading
+    ukf_.reanchor_yaw(std::atan2(last.y - first.y, last.x - first.x),
+                      config_.gnss_reanchor_sigma_yaw);
+  }
+
+  reanchor_last_t_ = timestamp_seconds;
+  ++reanchor_count_;
+  gnss_consecutive_rejects_ = 0;
+  reanchor_buf_.clear();
+  reanchor_recent_.clear();   // start the rate window fresh, so one re-anchor
+                              // cannot immediately justify the next
+  return true;
+}
+
 void FusionCore::maybe_inflate_for_recovery(
   const sensors::GnssPosMeasurement& innovation_pre)
 {
@@ -1723,6 +1824,34 @@ bool FusionCore::update_gnss(
   gnss_debug_.chi2_threshold     = config_.outlier_threshold_gnss;
   gnss_debug_.in_coast_mode      = gnss_in_coast_;
   gnss_debug_.consecutive_rejects = gnss_consecutive_rejects_;
+
+  // Record every RECEIVED fix with the odometry distance at that moment, before any
+  // gate runs. The buffer has to describe the receiver, not the subset the filter
+  // agreed with, or the consistency test is circular.
+  if (config_.gnss_reanchor_enabled) {
+    reanchor_buf_.push_back({timestamp_seconds, fix.x, fix.y, fix.z,
+                             distance_traveled_,
+                             ukf_.state().x[X], ukf_.state().x[Y],
+                             fix.sigma_xy > 0.0 ? fix.sigma_xy : fix.hdop});
+    const size_t cap = (size_t)std::max(3, config_.gnss_reanchor_buffer_n);
+    while (reanchor_buf_.size() > cap) reanchor_buf_.pop_front();
+
+    // Record the PREVIOUS fix's outcome here rather than at each of the many
+    // return points, so there is exactly one place that can get it wrong.
+    // NOT_PROCESSED only appears before the first fix, which is correctly skipped.
+    if (gnss_debug_.reason != GnssRejectionReason::NOT_PROCESSED) {
+      reanchor_recent_.push_back(gnss_debug_.reason != GnssRejectionReason::ACCEPTED);
+      const size_t wcap = (size_t)std::max(5, config_.gnss_reanchor_window);
+      while (reanchor_recent_.size() > wcap) reanchor_recent_.pop_front();
+    }
+
+    // Evaluate once per RECEIVED fix, here, rather than only on the rejection
+    // paths. Branch C is the case where fixes are being ACCEPTED and the filter
+    // is still wrong, so a rejection-only call site can never see it: the
+    // synthetic reproduced that failure and fired zero times until this moved.
+    maybe_reanchor(timestamp_seconds);
+  }
+
   const StateMatrix& P_now = ukf_.state().P;
   gnss_debug_.position_sigma_x   = std::sqrt(std::max(P_now(X, X), 0.0));
   gnss_debug_.position_sigma_y   = std::sqrt(std::max(P_now(Y, Y), 0.0));
@@ -2110,6 +2239,7 @@ bool FusionCore::apply_gnss_update(
             ukf_.predict_measurement<sensors::GNSS_POS_DIM>(
               z, h_gnss, R, innov_c, S_c);
             maybe_inflate_for_recovery(innov_c);
+            maybe_reanchor(timestamp_seconds);
           }
           return false;
         }
@@ -2224,6 +2354,10 @@ bool FusionCore::apply_gnss_update(
           ukf_.set_gyro_bias_noise_scale(config_.gnss_coast_q_bias_factor);
         }
         maybe_inflate_for_recovery(innovation_pre);
+        // Widening P is not enough on its own: measured, the gate still rejects
+        // 81% of fixes during recovery. This moves the filter when the fixes
+        // agree with each other and with odometry.
+        maybe_reanchor(timestamp_seconds);
       }
       return false;
     }

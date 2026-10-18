@@ -646,6 +646,66 @@ struct FusionCoreConfig {
   // Number of consecutive accepted fixes required to confirm GNSS recovery.
   // Set to 0 to disable confirmation and clear the outage latch immediately.
   int    gnss_reacquire_confirm_fixes = 3;
+
+  // ── Re-anchoring after a blackout ───────────────────────────────────────────
+  //
+  // Measured 2026-10-18 on NCLT: 74.8% to 100% of the error on every sequence is
+  // in GNSS gaps or the recovery after them, and steady coverage never exceeds
+  // 25.2%. Inside the recovery windows the gate rejects 81.0% and 81.2% of fixes
+  // against 10.4% and 10.6% over the whole run, with a median mahalanobis of
+  // 85.542 against a threshold of 16.27. The filter drifts in the hole, then
+  // throws away the fixes that would get it out because they disagree with it.
+  //
+  // The existing maybe_inflate_for_recovery() widens P but never MOVES the
+  // filter, and 81% rejection is what that is worth. Re-anchoring moves it.
+  //
+  // THE EVIDENCE IS AGREEMENT AMONG THE FIXES, NOT WITH THE FILTER. The filter is
+  // the thing in doubt, so it does not get a vote. A buffer of recent fixes must
+  // agree with each other AND with wheel odometry over the same interval, which
+  // is an independent source. That is what stops this becoming the third latch
+  // bug in this file: it cannot fire on a drifting cluster of outliers, because
+  // outliers do not track the encoder.
+  //
+  // Default OFF so the shipped path is byte identical.
+  bool   gnss_reanchor_enabled = false;
+  // Re-anchoring triggers on a windowed REJECTION RATE, not a consecutive count.
+  //
+  // A consecutive counter was tried first and never fired. Measured on
+  // 2012-08-20, the recovery windows reject 81.2% of fixes, but the ~19% that are
+  // accepted are interspersed, so runs of consecutive rejections stay short and
+  // a threshold of 20 is never reached. The synthetic caught this before it ever
+  // touched real data: with NCLT-grade fix noise it rejected 31 of 220 and fired
+  // zero times. What actually characterises a stuck filter is the RATE.
+  int    gnss_reanchor_window = 20;        // fixes to look back over
+  double gnss_reanchor_reject_frac = 0.6;  // fraction of them rejected
+  // SECOND trigger, for branch C. A high rejection rate cannot detect the case
+  // where fixes are ACCEPTED and the filter is still wrong, which is what
+  // 2012-09-28 does: median mahalanobis 0.526 against a 16.27 threshold, and the
+  // error persists anyway because the heading it left the blackout with is wrong.
+  // The synthetic reproduces it too, settling 18.9 m out after 120 s of good
+  // fixes while rejecting only 15 of 220.
+  //
+  // The signature is a PERSISTENTLY ONE-SIDED innovation: every fix pulls the
+  // filter the same way, which random noise does not do. Trigger when the mean
+  // offset over the window exceeds this many metres and is consistent in
+  // direction.
+  double gnss_reanchor_bias_m = 8.0;
+  // How many recent fixes must agree. Fewer than 3 cannot establish a track.
+  int    gnss_reanchor_buffer_n = 5;
+  // Each fix-to-fix displacement must match the odometry distance over the same
+  // interval to within this, in metres. This is the independent check.
+  double gnss_reanchor_odom_tol_m = 4.0;
+  // Minimum speed, m/s, before the GNSS track is trusted as a heading source.
+  // Below this the bearing between fixes is receiver noise, not a direction.
+  double gnss_reanchor_min_speed = 0.7;
+  // Position sigma to leave behind after re-anchoring, metres.
+  double gnss_reanchor_sigma_xy = 5.0;
+  // Yaw sigma to leave behind when heading is reset, radians.
+  double gnss_reanchor_sigma_yaw = 0.35;
+  // TIME BOUND. No second re-anchor within this many seconds, and normal gating
+  // resumes immediately afterwards because nothing here latches. A test asserts
+  // that it does.
+  double gnss_reanchor_cooldown_s = 20.0;
   // Floor for the P inflation, in metres of XY sigma. The inflation itself is
   // sized from the rejected innovation, because the error to be covered is
   // however far the dead reckoning went and no constant brackets that: 50 m is
@@ -1160,6 +1220,10 @@ public:
   // rejected" are different failures with different fixes, and they are
   // indistinguishable from the outside without this. adapt_R has no ceiling on
   // this channel: on the IMU channel the same code was measured at 1723x nominal.
+  // How many times the filter has been re-anchored. Exposed so a test can assert
+  // that it fired, and that it did NOT fire while GNSS was healthy.
+  long gnss_reanchor_count() const { return reanchor_count_; }
+
   double gnss_r_scale_xy() const {
     const double nom = R_gnss_floor_(0,0);
     return nom > 0.0 ? R_gnss_(0,0) / nom : 1.0;
@@ -1407,6 +1471,15 @@ private:
   // fixes accepted in a row rather than one. A sustained spike cannot abuse
   // this, because the latch is only ever SET by a real gap.
   bool post_outage_unconfirmed_   = false;
+
+  // Re-anchor buffer: recent fixes with the odometry distance at each, so the
+  // consistency test can use a source the filter does not influence.
+  struct ReanchorSample { double t, x, y, z, odom, fx, fy, sigma; };
+  std::deque<ReanchorSample> reanchor_buf_;
+  double reanchor_last_t_ = -1e18;
+  std::deque<bool> reanchor_recent_;   // true = rejected, most recent at the back
+  long   reanchor_count_  = 0;
+  bool   maybe_reanchor(double timestamp_seconds);
   int  gnss_consecutive_accepts_  = 0;
   // Recovery mode: after a timeout-triggered coast, accept the first returning
   // GPS fix unconditionally (bypass chi2 gate). After 7+ minutes blind, dead
