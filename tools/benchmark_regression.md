@@ -1250,3 +1250,48 @@ Re-anchoring, specified so it is bounded by construction:
 Five NCLT bags is a small set to tune against. Keep thresholds physically motivated, fix
 quality and odometry agreement, rather than fitted, and confirm on the rover's own
 blackouts before calling it done.
+
+---
+
+## 2026-10-18: fix B alone makes it WORSE. Prediction confirmed, do not ship B without A.
+
+Prediction written first, in `tools/repro/fixB_prediction.md`: the gate tests against
+`S = H*P*H' + R`, so the inflated R is part of what lets the ~19% of fixes through during
+recovery. Shrinking R without fixing the rejection behaviour should tighten the gate on a
+filter that is already rejecting what would rescue it.
+
+2012-08-20, a GNSS R ceiling applied and nothing else changed.
+Provenance: `replay / nclt_shipped / windows / 100%`.
+
+```
+  r_max_scale      rej_all%   rej_recov%   med_Rscale     final_RMSE
+  0 (unbounded)       10.6%        81.2%      1990.28        186.627
+  100                 11.9%        88.8%        86.02        175.075
+  10                  98.2%       100.0%        10.00    2671751.429
+```
+
+**Confirmed.** A ceiling of 100 pushes recovery rejection from 81.2% to **88.8%**. A
+ceiling of 10 pushes it to **100%**: every single fix rejected during recovery, 98.2%
+across the whole run, and an RMSE of **2,671,751 m**.
+
+This also explains the earlier global-ceiling result that sent this sequence to
+16318370.904 m. That was not a GNSS-needs-headroom problem in the abstract. It was this
+exact interaction, measured now instead of guessed at.
+
+**So the two halves interact and the order matters.** B alone tightens the gate on a
+filter whose problem is that it is already rejecting too much. A alone recovers faster
+but then weights every later fix at up to 1/1990th. **Build both, and measure A only,
+B only, A+B, and A+B+C separately with the gap / recovery / steady table**, so each
+piece's contribution is attributable rather than assumed.
+
+### Getting B right, since a ceiling alone is the wrong tool
+
+- **Fix the estimator before the bound.** R should be `C_hat - H*P*H'`, not `C_hat`.
+  Most of the 1990x is the filter's own error being recorded as receiver noise, so
+  subtracting the filter's share removes the cause rather than clipping the symptom.
+  `adaptive_subtract_hph` exists but currently no caller passes `hph`, so it is inert.
+- **Freeze adaptation during recovery**, and whenever a consistency check says the filter
+  is the wrong one. Innovations there describe the filter's error, not the receiver's.
+- **Set the ceiling from data.** Take the real ratio of GNSS error to declared sigma from
+  the Phase 2 noise table and use roughly its 99th percentile, rather than picking 10 or
+  100 by hand. Both hand-picked values above are wrong in opposite directions.
