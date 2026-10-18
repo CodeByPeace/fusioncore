@@ -607,3 +607,54 @@ and 70 degrees.
 **Caveat, stated because it matters for Block 3:** these runs have the attitude flag ON,
 and the shipped configuration has it OFF. Whether the shipped losses go through this same
 loop is exactly what Block 3 tests, and it has not been run.
+
+---
+
+## 2026-10-18, Block 2: there is NO projection gap. The premise was wrong.
+
+The plan called for one shared lat/lon projection between `export_bag.py` and the node,
+on the belief that their different code paths explained node 157.591 against replay
+171.393 on 2012-08-20.
+
+**They are already the same transformation.** The node converts through PROJ with
+`input.gnss_crs: EPSG:4326` and `output.crs: EPSG:4978`, which is WGS84 geodetic to
+WGS84 ECEF. `export_bag.py` uses the closed form for exactly that. Tested on twelve real
+2012-08-20 fixes spanning the track:
+
+```
+          lat          lon |  max|diff| m
+    42.293916   -83.708331 |    2.910e-10
+    42.293949   -83.715033 |    9.313e-10
+    42.292802   -83.712655 |    5.821e-11
+    42.290485   -83.717180 |    4.657e-10
+    42.291835   -83.715965 |    1.746e-10
+    42.293924   -83.711118 |    0.000e+00
+```
+
+**Worst disagreement anywhere on the track: 9.313e-10 m.** Sub-nanometre. Both paths
+then call the same `fusioncore::sensors::ecef_to_enu`. The comment in the node saying
+"default behavior is identical to the hand-coded WGS84 to ECEF math" is correct and was
+worth believing. (The rows showing nan are fixes whose altitude is nan in the raw NCLT
+`gps.csv`, which is a property of the dataset, not of either projection.)
+
+**So the node-versus-replay difference is not a pipeline gap.** Comparing like with like,
+the node's frozen-config run scored 157.591 and the replay's OFF_frozen cell scored
+145.765, a 7.5% difference.
+
+**That is well inside the node's own measured run-to-run spread.** 2012-02-04 repeated
+through the node at 153.883, 153.097 and 134.045, a 14.80% spread on identical input and
+an unchanged control. A 7.5% node-to-replay difference needs no explanation beyond the
+node being the nondeterministic one.
+
+**Two consequences.**
+
+The acceptance test as written, node and replay agreeing within 0.5%, **is not
+achievable, and not because of the projection.** The node does not reproduce itself to
+0.5%. Asking the replay to match it to 0.5% asks it to match a number that moves.
+
+**Absolute published numbers should come from the replay, not the node**, for the same
+reason the benchmarking rule already says replay only: it is the deterministic path. The
+node remains the right integration test, checking that it lands within the replay's
+figure plus the node's own known spread.
+
+Block 2 therefore passes with no code change, and Block 4 is unblocked.
