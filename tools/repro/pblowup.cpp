@@ -32,11 +32,13 @@ static double yaw_sigma_deg(const State& s) {
 }
 
 int main(int argc, char** argv) {
-  if (argc < 4) { std::fprintf(stderr, "usage: pblowup <log> <q_angular_vel> <t_lo> <t_hi>\n"); return 2; }
+  if (argc < 4) { std::fprintf(stderr, "usage: pblowup <log> <q_angular_vel> <t_lo> <t_hi> [tangent] [freeze]\n"); return 2; }
   const std::string path = argv[1];
   const double q   = std::atof(argv[2]);
   const double tlo = argc > 3 ? std::atof(argv[3]) : 340.0;
   const double thi = argc > 4 ? std::atof(argv[4]) : 380.0;
+  const bool tangent = argc > 5 ? std::atoi(argv[5]) != 0 : true;
+  const bool freeze  = argc > 6 ? std::atoi(argv[6]) != 0 : false;
 
   FusionCoreConfig cfg;
   cfg.imu.gyro_noise_x=cfg.imu.gyro_noise_y=cfg.imu.gyro_noise_z=0.005;
@@ -45,18 +47,25 @@ int main(int argc, char** argv) {
   cfg.outlier_rejection=true;
   cfg.adaptive_imu=cfg.adaptive_encoder=cfg.adaptive_gnss=true;
   cfg.motion_model=create_motion_model("DifferentialDrive");
-  cfg.ukf.tangent_space_attitude=true;
-  cfg.ukf.tangent_space_quaternion_mean=true;
+  cfg.ukf.tangent_space_attitude=tangent;
+  cfg.ukf.tangent_space_quaternion_mean=tangent;
+  if (freeze) { cfg.ukf.q_acceleration=0; cfg.ukf.q_accel_bias=0;
+                cfg.ukf.q_gyro_bias=0;    cfg.ukf.q_encoder_wz_bias=0; }
   cfg.ukf.q_orientation=1e-9;
   cfg.ukf.q_angular_vel=q;
 
   FusionCore fc(cfg);
+  State s_init;
+  if (freeze) { s_init.P(B_GX,B_GX)=1e-12; s_init.P(B_GY,B_GY)=1e-12; s_init.P(B_GZ,B_GZ)=1e-12;
+                s_init.P(B_AX,B_AX)=1e-12; s_init.P(B_AY,B_AY)=1e-12; s_init.P(B_AZ,B_AZ)=1e-12;
+                s_init.P(B_EWZ,B_EWZ)=1e-12; }
   bool inited=false; double t0=-1;
   std::ifstream in(path);
   std::string line;
   std::printf("# q_angular_vel=%g window %.0f..%.0f s\n", q, tlo, thi);
-  std::printf("# %9s %10s %11s %11s %11s %11s %11s %11s %9s\n",
-              "t_rel","yaw_sig","P_pos","P_vel","P_quat","P_angvel","P_accel","P_gbias","zupt_std");
+  std::printf("# tangent=%d freeze=%d\n", (int)tangent, (int)freeze);
+  std::printf("# %9s %10s %12s %12s %12s %9s %12s\n",
+              "t_rel","yaw_sig","var_WZ","var_BGZ","var_SUM","r_wb","sum/wz");
   double last_print=-1;
   while (std::getline(in, line)) {
     std::istringstream ss(line);
@@ -65,7 +74,7 @@ int main(int argc, char** argv) {
     if (kind=="IMU") {
       double wx,wy,wz,ax,ay,az; ss >> t >> wx >> wy >> wz >> ax >> ay >> az;
       if (t0<0) t0=t;
-      if (!inited) { fc.init(State{}, t); inited=true; }
+      if (!inited) { fc.init(s_init, t); inited=true; }
       fc.update_imu(t,wx,wy,wz,ax,ay,az);
     } else if (kind=="ENC") {
       double vx,vy,wz; ss >> t >> vx >> vy >> wz;
@@ -88,9 +97,12 @@ int main(int argc, char** argv) {
     const State& s = fc.get_state();
     auto blk=[&](int a,int b){ double v=0; for(int i=a;i<=b;++i) v+=s.P(i,i); return v; };
     FusionCoreStatus st = fc.get_status();
-    std::printf("  %9.2f %10.4f %11.6f %11.6f %11.3e %11.6f %11.6f %11.3e %9.4f\n",
-                tr, yaw_sigma_deg(s), blk(X,Z), blk(VX,VZ), blk(QW,QZ),
-                blk(WX,WZ), blk(AX,AZ), blk(B_GX,B_GZ), st.zupt_accel_std);
+    (void)blk; (void)st;
+    const double pww = s.P(WZ,WZ), pbb = s.P(B_GZ,B_GZ), pwb = s.P(WZ,B_GZ);
+    const double vsum = pww + pbb + 2.0*pwb;
+    const double r = (pww>0 && pbb>0) ? pwb/std::sqrt(pww*pbb) : 0.0;
+    std::printf("  %9.2f %10.4f %12.6e %12.6e %12.6e %9.4f %12.3e\n",
+                tr, yaw_sigma_deg(s), pww, pbb, vsum, r, pww>0 ? vsum/pww : 0.0);
   }
   return 0;
 }

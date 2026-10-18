@@ -705,3 +705,58 @@ reason to change the library default from `general`: `fusioncore_core` still has
 correct for a platform that leaves the ground plane, and the scope statement shipped
 today says the library runs on those with nothing frozen. Flipping that default is a
 separate decision with a separate blast radius.
+
+---
+
+## 2026-10-18: the WZ/bias pair hypothesis FAILS, and my column label caused it
+
+Predictions were written down before running and are kept in
+`tools/repro/wz_bias_predictions.md`. The hypothesis was that `P_angvel = 0.2417` means
+the filter cannot pin its rotation rate to better than 28 deg/s while a gyro measures it
+at 100 Hz, which is only consistent with the WZ / B_GZ pair at r = -0.998: each huge
+individually, their SUM pinned by the gyro, and heading integrating WZ alone.
+
+2013-04-05, t = 100 to 140 s, all four arms:
+
+```
+  arm               t_rel   yaw_sig        var_WZ       var_BGZ       var_SUM     r_wb   sum/wz
+  flagOFF_free     118.15   22.1178  2.903199e-02  1.718904e-03  2.941712e-02  -0.0944    1.013
+  flagOFF_frozen   118.15   10.4647  2.836724e-02  1.310965e-04  2.834013e-02  -0.0410    0.999
+  flagON_free      118.15   34.5746  2.888260e-02  1.573027e-03  2.941244e-02  -0.0774    1.018
+  flagON_frozen    118.15   11.3186  2.835584e-02  1.206296e-04  2.833968e-02  -0.0370    0.999
+```
+
+**P1 FAILS.** `var(WZ + B_GZ)` was predicted to be of order the gyro noise variance,
+about 2.5e-5, against a `var(WZ)` of 0.24. Measured, the sum is **2.94e-2 against a WZ
+variance of 2.90e-2**, a ratio of **1.013**. The sum is not small. It is the same size as
+var(WZ).
+
+**P2 FAILS.** `r(WZ, B_GZ)` was predicted near -1. Measured it runs **-0.6256 down to
+-0.0370**, and it is near -0.04 to -0.10 for most of the window. The -0.998 on record was
+not measured here and does not describe this run.
+
+**P3 PARTLY HOLDS.** Freezing was predicted to give single-digit yaw sigma. It roughly
+HALVES it, 37.7883 to 15.4331 at t = 101 and 22.1178 to 10.4647 at t = 118, but it lands
+at 10 to 15 degrees rather than under 10.
+
+**P4 HOLDS.** The pattern is the same with the attitude flag off and on.
+
+**The failure is traceable to my own column label, and that is the fifth time this week.**
+My Block 1 table printed a column headed `P_angvel` with the value 0.2417. That column is
+`blk(WX,WZ)`, the **sum of the three angular-velocity variances**, not the variance of
+WZ. Measured here, `var(WZ)` alone is 0.029. A reader given a column called `P_angvel`
+reasonably treats it as a variance, builds a 28 deg/s argument on it, and the argument
+inherits my error. Labelling a trace as if it were a variance is the same class of
+mistake as reporting a median against an RMSE target.
+
+**What is actually true, and it still points the same way.** `var(WZ)` of 0.029 is a
+standard deviation of 0.17 rad/s, about 10 deg/s. Integrated over the seconds between
+useful corrections that is tens of degrees of yaw uncertainty, which is the observed 20
+to 40. So yaw uncertainty does grow out of angular-rate uncertainty, exactly as the
+hypothesis said. What is NOT happening is a precise sum hiding behind two huge
+anti-correlated terms. The bias variance contributes directly: freezing it drops
+`var(B_GZ)` from 1.7e-3 to 1.3e-4, a factor of 13, and halves yaw sigma.
+
+**That still supports IMU-as-input**, but for a plainer reason than the one proposed.
+Integrating `gyro - bias` directly would remove WZ as a free state whose variance grows
+between corrections, rather than removing a cancelling pair that is not there.
