@@ -542,3 +542,68 @@ disabled spike rejection for entire runs.
 
 Standing rules for all of it: replay only and never through the live node for any
 benchmark; report RMSE, median and path ratio together; the attitude flag stays off.
+
+---
+
+## 2026-10-18, Block 1: there is NO event at 362 s. Divergence starts at 10 s.
+
+`tools/repro/pblowup.cpp` logs the diagonal blocks of P directly, plus yaw sigma computed
+from the quaternion covariance rather than inferred from path ratio. Twins q = 0.0015 and
+q = 0.002 on 2013-04-05, attitude flag ON.
+
+First step at which each block of P differs by more than 1% between the twins:
+
+```
+  block           t_rel        healthy     degenerate
+  P_angvel         9.59       0.241693       0.244623
+  P_quat          16.63         0.2807         0.2766
+  yaw_sig         18.65        55.4783        54.9199
+  P_gbias         23.70         0.1329         0.1313
+  P_accel         27.21        12.1707        12.3492
+  P_pos           28.72        21.0795        22.1537
+  P_vel           29.22        31.2951        30.2855
+```
+
+**Everything happens in the first 30 seconds, and the first block to move is the one the
+swept parameter controls directly.** `q_angular_vel` sets the angular-velocity process
+noise, so `P_angvel` separating at 9.59 s is the parameter doing exactly what it says.
+It reaches the quaternion 7 s later, yaw sigma 2 s after that, and the rest of the state
+within another 10 s.
+
+**So the earlier "sigma doubles at t = 362 s" was wrong, and the error was mine.** That
+number came from the `sigma_x` column of the per-fix GNSS CSV, which is the adaptively
+scaled measurement noise, not the filter covariance. Measured from P directly, the twins
+have already parted by 30 s.
+
+**The far more important finding is in the yaw sigma trajectory, and it applies to BOTH
+twins:**
+
+```
+    t_rel    healthy      degen
+     22.2    52.5504    51.0143
+     44.3    44.7697    24.9704
+     66.5    55.9493    19.2326
+    110.8     8.1878    39.6904
+    177.2    32.7259    70.1856
+    243.7    43.0086    46.1270
+    332.2     4.5278    25.6770
+    398.6    13.1652    24.4433
+```
+
+**Yaw sigma runs 5 to 70 degrees for the whole run in both twins.** The healthy one is at
+55.9 degrees at t = 66.5 s. A filter with continuous 1 Hz GNSS and working wheel odometry
+should know its heading to single digits. Neither twin ever does.
+
+**That reframes the whole question.** There is no discrete event to find and no single
+branch to instrument. Heading uncertainty is pathological from the first minute, both
+twins wander inside that uncertainty, and the outlier gate turns a continuous divergence
+into two discrete basins, which is why the outcome is bimodal and why it disappears when
+the gates are switched off. Sensitive dependence, not a switch firing at a moment.
+
+The practical consequence is unchanged and is now better supported: **bound the attitude
+covariance.** Nothing downstream can be fixed while yaw sigma spends the run between 5
+and 70 degrees.
+
+**Caveat, stated because it matters for Block 3:** these runs have the attitude flag ON,
+and the shipped configuration has it OFF. Whether the shipped losses go through this same
+loop is exactly what Block 3 tests, and it has not been run.
