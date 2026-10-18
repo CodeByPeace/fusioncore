@@ -369,3 +369,57 @@ tuned. It stays off.
 
 The useful output is the repro, not the tuning. Any future work on the wrong-basin
 question should start here, because it costs seconds per sample.
+
+---
+
+## 2026-10-18: the outlier gate IS the discrete switch, and it protects rather than locks out
+
+Step 1 of the twin-run plan: rerun the `q_angular_vel` sweep with all outlier gates
+disabled. If the flipping disappears, the gate is the switch.
+
+2013-04-05, attitude flag ON, bias free, only `ukf.q_angular_vel` and
+`outlier_rejection` changed:
+
+```
+  gates ON                                        gates OFF
+  q_ang_vel     RMSE   median   ratio  rejects    RMSE   median   ratio  rejects
+  0.1         64.159   11.029   0.171       61   271.480  42.400  0.153       12
+  0.01        26.696    7.832   1.053      145   259.383  40.609  0.161       12
+  0.001       41.131    8.403   0.302      101   238.688  35.816  0.599       12
+  1e-4        28.673    7.856   0.174       68   251.513  40.034  0.184       12
+  1e-5        31.042    8.067   0.997      147   227.750  36.445  0.289       12
+```
+
+**The flipping disappears with the gates off.** Every cell is uniformly degenerate,
+227 to 271 m, ratio 0.15 to 0.60, and the healthy outcomes at q = 0.01 and 1e-5 are
+gone. So the gate is the discrete switch, exactly as predicted.
+
+**But the direction is the opposite of the lock-out theory, and the rejection counts say
+so plainly.** With the gates on, the HEALTHY runs reject MORE: 145 and 147 rejections at
+q = 0.01 and 1e-5, against 61, 68 and 101 in the degenerate ones. A locked-out filter
+would show the reverse, long streaks of rejection in the bad runs.
+
+The mechanism that fits every column: the Mahalanobis test normalises by
+`S = HPH' + R`. In a degenerate run the attitude covariance is enormous, so S is
+enormous, so the gate is effectively wide open and accepts bad fixes (61 rejections).
+In a healthy run P is sane, S is sane, the gate does its job (147 rejections) and the
+filter stays tracking. **The gate is not causing the lock-in. It is the thing preventing
+it, and it stops working precisely when the covariance it normalises by has blown up.**
+
+That makes it self-reinforcing, which is what a bistability needs: a big P disables the
+only mechanism that would have kept P small.
+
+**Consequence for the fix.** A recovery path after N consecutive rejections, the obvious
+remedy under the lock-out theory, would have been aimed at the wrong end of the loop:
+the bad runs are not rejecting enough to trigger it. The lever is bounding the attitude
+covariance so the gate keeps working, which is also what the `ground_robot` freeze does
+and is consistent with OFF_frozen being the best cell on both a win and a loss.
+
+Still to do on this thread: a fine sweep between 0.01 and 0.001 to find neighbouring
+healthy and degenerate values, then a twin-run diff logging every discrete decision with
+a timestamp to find the first one that differs. And the same on a losing sequence with
+the flag OFF, to confirm it is the same switch rather than one the flag created.
+
+Caveat by the rule: "implied yaw sigma" in the section above is an INFERENCE from path
+ratio, not a measurement, and path ratio also moves with jitter. Yaw sigma should be
+logged from P directly before that number is quoted again.
