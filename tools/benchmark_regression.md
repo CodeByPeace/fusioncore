@@ -225,7 +225,7 @@ either, and ZUPT is doing less work here than its presence suggests.
 
 ---
 
-## 2026-10-18: the attitude bug was NOT the NCLT lock-in
+## 2026-10-18 (SUPERSEDED BELOW): the attitude bug was NOT the NCLT lock-in
 
 The exact-log-map fix made heading converge in a controlled test where it had previously
 random-walked the whole circle. The obvious question was whether that bug was also what
@@ -266,3 +266,60 @@ exported log and one projection.
 
 `tools/yaml_to_replay_args.py` was written for this and is the supported way to drive an
 offline A/B with the same configuration the node would have used.
+
+---
+
+## 2026-10-18, corrected: the attitude flag is ACTIVELY HARMFUL on real data
+
+The section above measured one sequence, in ATE RMSE, against a target quoted in
+MEDIAN. Those are different metrics and the comparison as framed was invalid. The data
+was fine; the framing was mine and wrong, which is the third summarisation error in two
+days and the reason the rule about pasting raw numbers now exists.
+
+Re-scored with every metric the scorer already reported, and with a WIN added so there
+is something to compare a loss against:
+
+```
+  2012-08-20 (LOSS, node 157.591, node median 33.65)
+  cell              RMSE     median   path_ratio    drift
+  OFF_free       171.393     35.436        0.888    20.24
+  ON_free        158.843     30.012        0.614    12.96
+  OFF_frozen     145.765     31.618        0.967    18.76
+  ON_frozen      166.135     30.660        0.940    20.77
+
+  2013-04-05 (WIN, node 9.193, node median 7.31)
+  cell              RMSE     median   path_ratio    drift
+  OFF_free        16.677      6.960        1.019     3.17
+  ON_free         64.159     11.029        0.171     2.04
+  OFF_frozen      15.355      7.001        1.073     3.07
+  ON_frozen       27.444      8.165        1.049     5.37
+```
+
+**The attitude flag makes the WIN 3.8x worse**, 16.677 to 64.159, with the median going
+6.960 to 11.029. And the path length ratio collapses to **0.171**, meaning the
+trajectory is 83% too short.
+
+**That reframes the apparent improvement on the loss.** ON_free looked better there
+(171.393 to 158.843) only because the loss is already bad enough to hide the same
+degeneracy: its path ratio is 0.614. The flag causes systematic UNDER-TRAVEL on both
+sequences, and ATE flattered it on the one where there was more room to hide.
+
+Without the path-length ratio beside ATE this would have been recorded as a partial
+improvement. It is not. **Report the ratio next to ATE on every benchmark from now on.**
+A ratio far from 1.0 catches jitter, oscillation and degeneracy no matter how the SE3
+alignment happens to land.
+
+**OFF_frozen is the best cell on both sequences**: 145.765 at ratio 0.967 on the loss,
+15.355 at ratio 1.073 on the win. The `ground_robot` bias freeze helps a loss and a win
+alike, which is consistent with what the profile already measured through the node.
+
+**So the attitude flag stays off, and not merely pending the turning work.** It has a
+systematic under-travel problem on real data. The likely mechanism is the one this filter
+has had all along: the exact log map no longer under-reports large rotations, so the
+attitude covariance is correctly LARGER, the sigma points spread wider, and averaging
+`R(q)*v*dt` across a wider attitude cloud cancels more forward displacement. The
+small-angle bug was partially masking the cancellation defect by shrinking the covariance.
+
+Both conclusions from the superseded section survive: the attitude bug was not the NCLT
+lock-in, and the bistability question is still open.
+
