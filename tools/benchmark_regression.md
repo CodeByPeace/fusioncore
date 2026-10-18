@@ -1175,3 +1175,78 @@ several successive fixes agree with each other and with odometry. If it is accep
 but moving slowly, the fix is the unbounded adaptive R on the GNSS channel, which is the
 same defect already found and fixed on the IMU channel and deliberately left alone on
 GNSS because GNSS needs headroom.
+
+---
+
+## 2026-10-18, ROOT CAUSE: the gate rejects 81% of the fixes that would rescue it
+
+Branch predictions were written before running and are in
+`tools/repro/reconv_predictions.md`. Inside the re-convergence windows only:
+
+```
+  sequence      nfix_rc   rej_rc%   rej_all%   med_mah2_rc   med_Rscale_rc   max_Rscale
+  2012-02-04       2399     81.0%      10.4%        47.678          253.79       502.40
+  2012-08-20       2604     81.2%      10.6%        85.542         1990.28      4907.78
+  2012-09-28        842     33.0%       1.5%         0.526            4.70       240.46
+```
+
+Provenance: `replay / nclt_shipped / windows / 100%`. The chi-squared threshold is 16.27.
+
+**Branch A confirmed on the two worst sequences, and it is not subtle.** During recovery
+the gate rejects **81.0% and 81.2%** of fixes, against 10.4% and 10.6% across the whole
+run. An eightfold increase in rejection rate, concentrated exactly where the filter needs
+the fixes most.
+
+**Branch B is present as well, and it is the same unbounded `adapt_R` found on the IMU
+channel.** The adapted GNSS R reaches **1990x nominal in the median** during 2012-08-20's
+recovery windows and **4907x at peak**. On the IMU channel the same code was measured at
+1723x. It was deliberately left unbounded on GNSS because GNSS genuinely needs headroom,
+and that decision is what lets it reach 4907x.
+
+**Branch C confirmed on 2012-09-28, exactly as predicted.** Only 33% rejected, a median
+mahalanobis of **0.526** against a threshold of 16.27, and an R scale of 4.70. **The
+fixes look completely fine to the gate and are accepted at near-normal weight, and the
+error persists anyway.** That is the heading signature: position is pulled to the fix,
+then walks away again because the state left the gap wrong.
+
+**Prediction scorecard: 2 of 3.** 2012-08-20 predicted A, is A. 2012-09-28 predicted C,
+is C. **2012-02-04 predicted B, is actually A**: its noisy GNSS made the adaptive-R story
+tempting, and the rejection rate of 81.0% says otherwise.
+
+### The mechanism, end to end and measured
+
+1. GNSS blackout. The filter drifts, which is Type A and is only 2.8% of 2012-08-20's
+   error.
+2. Fixes return. The filter is far from truth, so innovations are enormous: median
+   mahalanobis 85.5 against a 16.27 threshold.
+3. **The gate rejects 81% of them.** The fixes that would fix it are discarded for
+   disagreeing with a filter that is wrong.
+4. The ~19% that get through are weighted at up to 1/1990th of nominal, because `adapt_R`
+   grew without a ceiling, so they barely move it.
+5. Recovery takes 22.4% of the run on 2012-08-20 and **44.5% on 2012-02-04**.
+
+**A wrong filter rejects the evidence that it is wrong, and discounts what little it
+accepts.** Both halves are the same failure of self-trust, and the repository has shipped
+this family twice before: the post-outage latch that never cleared, and the case measured
+at 1 accepted fix against 1999 rejected while 690 m out.
+
+### What the fix has to be, and how to stop it becoming latch bug #3
+
+Re-anchoring, specified so it is bounded by construction:
+
+- Buffer the last N fixes. Require them to agree **with each other** and **with
+  odometry**, at acceptable fix quality. Consistency among the fixes is the evidence,
+  not agreement with the filter, because the filter is the thing in doubt.
+- Re-anchor only after M consecutive large innovations from an otherwise consistent
+  buffer. Set position from the fix, inflate `P_pos`, and re-initialise heading from the
+  GNSS track when moving, because 2012-09-28 shows position alone is not enough.
+- **Time bounded.** Normal gating resumes automatically afterwards, with a test that
+  fails if it does not.
+- Synthetic first, with injected blackout drift and known truth, covering all three
+  branches.
+- Acceptance on the five bags: the recovery share of error drops sharply, steady
+  coverage does not get worse, no new excursions.
+
+Five NCLT bags is a small set to tune against. Keep thresholds physically motivated, fix
+quality and odometry agreement, rather than fitted, and confirm on the rover's own
+blackouts before calling it done.

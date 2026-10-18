@@ -1154,6 +1154,16 @@ public:
   const std::array<OutcomeTally, MAG_REJECTION_REASON_COUNT>&
     mag_outcome_tally() const { return mag_tally_; }
   const GnssFixDebug& get_gnss_debug() const { return gnss_debug_; }
+
+  // The adapted GNSS position noise, and the nominal it started from. Exposed
+  // because "the fix was accepted but weighted at nothing" and "the fix was
+  // rejected" are different failures with different fixes, and they are
+  // indistinguishable from the outside without this. adapt_R has no ceiling on
+  // this channel: on the IMU channel the same code was measured at 1723x nominal.
+  double gnss_r_scale_xy() const {
+    const double nom = R_gnss_floor_(0,0);
+    return nom > 0.0 ? R_gnss_(0,0) / nom : 1.0;
+  }
   const MagnetometerDebug& get_magnetometer_debug() const { return mag_debug_; }
   void               reset();
   bool               is_initialized()    const { return initialized_; }
