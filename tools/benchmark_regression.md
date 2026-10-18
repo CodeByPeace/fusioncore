@@ -222,3 +222,47 @@ it points at the filter entering a bad state and staying there, which is #150.
 Contiguous stops of 2 s or longer total 59 to 183 s out of 55 to 94 minutes, on every
 sequence, wins and losses alike. So "it stopped more often" cannot be the explanation
 either, and ZUPT is doing less work here than its presence suggests.
+
+---
+
+## 2026-10-18: the attitude bug was NOT the NCLT lock-in
+
+The exact-log-map fix made heading converge in a controlled test where it had previously
+random-walked the whole circle. The obvious question was whether that bug was also what
+locks a losing NCLT sequence into a wrong state, since a covariance that lost 40% of
+itself on every rebuild is exactly the precondition for a filter that is confident and
+wrong.
+
+It is not. 2012-08-20, the 15x loss, run through the deterministic core replay as a 2x2
+over the attitude flag and the `ground_robot` bias freeze:
+
+```
+  cell          gnss rejects      path_m      ATE RMSE 3D
+  OFF_free              2121    10586.56         171.393
+  ON_free               2299    25011.02         158.843
+  OFF_frozen            2070     9771.16         145.765
+  ON_frozen             2759     9789.83         166.135
+```
+
+Encoder reference path is 6105.75 m. Nothing drops toward the 7 m that the winning
+sequences achieve. The best cell is the bias freeze alone at 145.765, about 15% better
+than baseline, which is the same order the profile already measured through the node.
+
+**So two suspects are cleared and the bistability question stays open.** The attitude
+representation was a real bug with a real controlled-test fix, and it is not what makes
+a sequence lose.
+
+One warning sign against turning the flag on: **ON_free produced a 25,011 m fused path
+for a 6,106 m drive**, four times the true distance, while its ATE happened to read
+lower. A lower ATE on a trajectory that long is not an improvement, and it is another
+reason the flag stays off until the turning error is understood.
+
+Caveats, stated because the numbers invite over-reading. This is **n=1 per cell on one
+sequence**. Replay ATE is not comparable to node ATE on the same data: the node scored
+157.591 here while the replay baseline is 171.393, because `export_bag.py` flattens
+lat/lon with its own conversion while the node uses PROJ ECEF to ENU, which is a known
+and documented gap. The comparison across cells is valid because all four share one
+exported log and one projection.
+
+`tools/yaml_to_replay_args.py` was written for this and is the supported way to drive an
+offline A/B with the same configuration the node would have used.
