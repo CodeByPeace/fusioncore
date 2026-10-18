@@ -906,3 +906,63 @@ time, are both wrong regardless of what they cost on a benchmark.
 The stop rule said a large noise bug would mean the architecture work is not needed.
 **Two were found and the architecture question is back open**, because neither moved the
 result. That is the opposite of the hoped-for outcome and it is the honest one.
+
+---
+
+## 2026-10-18: RAW GNSS BEATS THE FILTER ON ALL SIX SEQUENCES
+
+The dumb baseline nobody had run. Take the GNSS fixes straight out of the exported log,
+score them against ground truth as a trajectory, and compare against the fused output.
+
+**First attempt was unfair and the caveat matters.** GNSS-only associates on about 2.9%
+of the points the filter does (3947 against 134368 on 2012-01-08), because it only exists
+at fix times and is therefore never scored during the blackouts where the filter's error
+explodes. Scoring them that way flatters GNSS.
+
+Corrected with `tools/subsample_to_fix_times.py`, which keeps only the filter poses within
+50 ms of a GNSS fix, so both are scored on identical points:
+
+```
+  sequence      GNSS RMSE   GNSS median |   FC RMSE   FC median |   pairs
+  2012-01-08        9.523         7.024 |    20.606       7.116 |    3947
+  2012-02-04       58.672        13.817 |   144.903      35.104 |    4970
+  2012-06-15        9.046         4.937 |    10.945       4.957 |    3400
+  2012-08-20       32.238         7.337 |   176.805      39.923 |    5236
+  2012-09-28        8.983         6.289 |    23.956       7.180 |    3990
+  2013-04-05        8.562         6.297 |    10.149       6.419 |    3199
+```
+
+**Raw GNSS has lower RMSE than the filter on all six, scored on the same points.**
+
+**The medians say something more precise, and more useful.** On four of the six the
+medians are within 2%: 7.024 against 7.116, 4.937 against 4.957, 6.289 against 7.180,
+6.297 against 6.419. **Typical-case accuracy is the same as doing no filtering at all.**
+The RMSE gap is therefore excursions: the filter matches GNSS most of the time and then
+departs badly. On 2012-02-04 and 2012-08-20 it is worse even in the median, 13.817
+against 35.104 and 7.337 against 39.923.
+
+### What this reframes
+
+**The sequences FusionCore "wins" are not wins.** 2012-09-28 and 2013-04-05, its two best
+results at 8.872 and 9.193 RMSE, are matching a raw GNSS stream that scores 8.983 and
+8.562 on its own. Fusion is adding nothing there.
+
+**The split is not GNSS quality.** 2012-01-08 and 2013-04-05 have almost identical GNSS
+error, 9.523 and 8.562 RMSE, 7.024 and 6.297 median. FusionCore scores 185.195 on the
+first and 9.193 on the second. **Same input quality, 20x different output.** So the
+hypothesis that the losses come from those sequences' GNSS being worse is falsified: the
+split is created by the filter.
+
+**The published benchmark omits the baseline that beats both filters.** The table compares
+FusionCore against robot_localization and reports who wins. On this evidence raw GNSS,
+interpolated and unfiltered, has lower RMSE than both on most of these sequences. Any
+public correction has to carry that, because it is the first thing a careful reader would
+check and it is not currently anywhere in the repository.
+
+### The remaining honest caveat
+
+This scores only where GNSS exists. It says nothing about the blackouts, which is the case
+fusion is actually for and where raw GNSS has no answer at all. So the correct statement
+is narrow and still damaging: **where GNSS is available, fusion is not improving on it,
+and is adding excursions.** Quantifying the blackout case needs a different experiment,
+scoring only inside the gaps, and that has not been run.
