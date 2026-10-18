@@ -760,3 +760,72 @@ anti-correlated terms. The bias variance contributes directly: freezing it drops
 **That still supports IMU-as-input**, but for a plainer reason than the one proposed.
 Integrating `gyro - bias` directly would remove WZ as a free state whose variance grows
 between corrections, rather than removing a cancelling pair that is not there.
+
+---
+
+## 2026-10-18, PHASE 1: adapt_R inflates the gyro R by up to 1723x. Two defects found.
+
+Prediction written before measuring, kept in `tools/repro/phase1_predictions.md`: right
+after an IMU update, `var(WZ + B_GZ)` should be about `R_gz`. The NCLT config sets
+`imu.gyro_noise: 0.003 rad/s`, so **R_gz = 9.000e-06 rad^2/s^2**.
+
+2013-04-05, t = 115 to 125 s, attitude flag off, bias free:
+
+```
+  q_angular_vel  adaptive   var(WZ) [rad^2/s^2]  var(WZ+B_GZ)   var(sum)/R_gz   yaw sigma [deg]
+  0.1            ON               1.723080e-02   1.551077e-02          1723.4           25.5440
+  0.1            OFF              1.089873e-03   8.912238e-06             1.0           26.7427
+  0.01           ON               4.200724e-03   2.797061e-03           310.8           24.7926
+  0.01           OFF              1.226315e-03   8.905351e-06             1.0           31.3261
+  0.001          ON               2.007583e-03   9.173582e-04           101.9           16.1546
+  0.001          OFF              2.259952e-03   1.423805e-03           158.2           22.5421
+```
+
+**The prediction is confirmed exactly, with adaptive noise OFF: `var(sum)/R_gz = 1.0`.**
+8.912238e-06 against a configured 9.000e-06. So the gyro IS being fused, the measurement
+model maps WZ correctly, and there is no axis, frame or units bug. That rules out the
+third Phase 1 outcome cleanly.
+
+### Defect 1: `adapt_R` has a floor and no ceiling
+
+With adaptive noise ON the same quantity is **1.551077e-02, which is 1723x the
+configured R**. `FusionCore::adapt_R` moves R toward the measured innovation covariance
+with an exponential average and clamps only from below:
+
+```cpp
+  R = (1.0 - config_.adaptive_alpha) * R + config_.adaptive_alpha * C_hat;
+  for (int i = 0; i < z_dim; ++i)
+    if (R(i,i) < R_floor(i,i)) R(i,i) = R_floor(i,i);   // floor only
+```
+
+**That is a positive feedback loop.** The filter is wrong, so innovations are large, so R
+grows toward them, so the gyro update carries less weight and the chi-squared gate
+(normalised by `S = HPH' + R`) opens wider, so the filter gets wronger. It is bounded
+below and unbounded above, and the comment explains the floor while the ceiling was never
+considered.
+
+This is the same self-reinforcing shape found from the other direction in the gate
+experiment, and it explains why it is self-reinforcing: **a wrong filter manufactures its
+own permission to stay wrong.**
+
+### Defect 2: `q_angular_vel` is per STEP and is enormous at 100 Hz
+
+`ukf.hpp` documents `q_angular_vel = 0.1 (rad/s)^2/step` and Q is never scaled by dt. At
+100 Hz that injects **10 (rad/s)^2 per second** of angular-rate uncertainty against a
+gyro whose own variance is 9e-6.
+
+Even with adaptive noise off and R correct, `var(WZ)` sits at **1.089873e-03**, which is
+a standard deviation of 0.033 rad/s or 1.9 deg/s. Integrated over the seconds between
+effective corrections that is the 20 to 30 degrees of yaw sigma observed, and the table
+shows yaw sigma barely moves when R is fixed (26.7427 at adaptive off against 25.5440
+at adaptive on).
+
+**So the two defects are independent.** Fixing R removes the 1723x inflation and the
+feedback loop. It does NOT by itself fix yaw sigma, because the per-step process noise
+sets a floor on `var(WZ)` regardless.
+
+### Consequence for the plan
+
+The stop rule says: if Phase 1 or 2 finds a large noise bug, fix it and rerun Phase 3
+before building anything in Phase 5. **Two large noise bugs were found.** The architecture
+work (IMU as input, USQUE) is now explicitly not the next thing to build.

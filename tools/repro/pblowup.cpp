@@ -39,13 +39,14 @@ int main(int argc, char** argv) {
   const double thi = argc > 4 ? std::atof(argv[4]) : 380.0;
   const bool tangent = argc > 5 ? std::atoi(argv[5]) != 0 : true;
   const bool freeze  = argc > 6 ? std::atoi(argv[6]) != 0 : false;
+  const bool adapt   = argc > 7 ? std::atoi(argv[7]) != 0 : true;
 
   FusionCoreConfig cfg;
-  cfg.imu.gyro_noise_x=cfg.imu.gyro_noise_y=cfg.imu.gyro_noise_z=0.005;
+  cfg.imu.gyro_noise_x=cfg.imu.gyro_noise_y=cfg.imu.gyro_noise_z=0.003;  // NCLT config
   cfg.imu.accel_noise_x=cfg.imu.accel_noise_y=cfg.imu.accel_noise_z=0.1;
   cfg.imu_has_magnetometer=false;
   cfg.outlier_rejection=true;
-  cfg.adaptive_imu=cfg.adaptive_encoder=cfg.adaptive_gnss=true;
+  cfg.adaptive_imu=cfg.adaptive_encoder=cfg.adaptive_gnss=adapt;
   cfg.motion_model=create_motion_model("DifferentialDrive");
   cfg.ukf.tangent_space_attitude=tangent;
   cfg.ukf.tangent_space_quaternion_mean=tangent;
@@ -63,7 +64,9 @@ int main(int argc, char** argv) {
   std::ifstream in(path);
   std::string line;
   std::printf("# q_angular_vel=%g window %.0f..%.0f s\n", q, tlo, thi);
-  std::printf("# tangent=%d freeze=%d\n", (int)tangent, (int)freeze);
+  std::printf("# tangent=%d freeze=%d adaptive=%d  configured R_gz = %.3e rad^2/s^2\n",
+              (int)tangent, (int)freeze, (int)adapt,
+              cfg.imu.gyro_noise_z*cfg.imu.gyro_noise_z);
   std::printf("# %9s %10s %12s %12s %12s %9s %12s\n",
               "t_rel","yaw_sig","var_WZ","var_BGZ","var_SUM","r_wb","sum/wz");
   double last_print=-1;
