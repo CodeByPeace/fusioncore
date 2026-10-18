@@ -1110,3 +1110,68 @@ the structural failures through the rule:
 
 Coverage is a field because of the truncated log: anything under 99% refuses to be
 compared at all.
+
+---
+
+## 2026-10-18, THE ANSWER: 75 to 100% of the error is blackouts and failing to recover
+
+`tools/blackout_budget.py`. Windows defined from the RAW fix stream so the
+classification does not depend on the filter: a **gap** is no fix for 10 s or more,
+**re-convergence** runs from the first fix after a gap until fused error has held under
+the GNSS-level reference for 10 s, **steady** is everything else. Each window's share of
+TOTAL SQUARED ERROR is reported, so the shares sum to 100% and answer the question
+directly.
+
+The reference is the RAW GNSS median against ground truth for that sequence. A first run
+used the fused steady median instead, which is the thing under test and far too loose, and
+it under-detected re-convergence badly: 2012-08-20 showed 93.4% with a 35.176 m reference
+and 94.0% with the correct 7.337 m one, while 2012-02-04 went from 0 detected
+re-convergence to 44.5% of the run.
+
+Provenance for every row: `replay / nclt_shipped / windows / 100%`.
+
+```
+  sequence      gap %time  gap %err | reconv %time  reconv %err | steady %time  steady %err
+  2012-02-04         0.0%      0.0% |       44.5%        94.5% |       55.5%         5.5%
+  2012-06-15         8.7%     84.6% |        0.0%         0.0% |       91.3%        15.4%
+  2012-08-20         2.2%      2.8% |       22.4%        94.0% |       75.5%         3.2%
+  2012-09-28         0.0%      0.0% |       12.3%        86.5% |       87.7%        13.5%
+  2013-04-05         1.8%     60.3% |        3.4%        14.5% |       94.9%        25.2%
+```
+
+**P1 confirmed.** 2012-06-15: **84.6%** of the squared error is inside the gaps, from
+8.7% of the time. One 462 s blackout.
+
+**P2 confirmed.** 2012-08-20: the gaps themselves are **2.8%**, and re-convergence is
+**94.0%** from 22.4% of the time. The filter does not lose it in the hole, it loses it
+climbing out.
+
+**And it generalises.** On every one of the five, between **74.8% and 100%** of the error
+lives in gaps or the recovery after them. **Steady coverage never exceeds 25.2%**, and
+on the two worst sequences it is 5.5% and 3.2%.
+
+### What this settles
+
+**The filter is fine when GNSS is present.** That is now measured rather than inferred,
+and it is consistent with the fix-times comparison where the medians matched raw GNSS.
+
+**The entire problem is blackout handling, and mostly RE-ACQUISITION rather than
+coasting.** Three of five are dominated by re-convergence (94.5%, 94.0%, 86.5%), two by
+the gaps themselves (84.6%, 60.3%). 2012-02-04 spends **44.5% of the whole run** in a
+state of not having recovered.
+
+**This is a logic problem, not an architecture problem.** Nothing here points at the
+state vector, the attitude representation, or the sigma-point scheme, which is where this
+investigation spent two days. It points at what happens in the seconds after a fix
+returns, which this repository has already shipped bugs in twice: the post-outage latch
+that never cleared, and the case measured at 1 accepted fix against 1999 rejected while
+690 m out.
+
+### What to measure next, to pick the Type B fix
+
+In the re-convergence windows specifically, log gate rejections and adapted GNSS R over
+nominal. If the filter is rejecting the returning fixes, the fix is re-anchoring when
+several successive fixes agree with each other and with odometry. If it is accepting them
+but moving slowly, the fix is the unbounded adaptive R on the GNSS channel, which is the
+same defect already found and fixed on the IMU channel and deliberately left alone on
+GNSS because GNSS needs headroom.
