@@ -423,3 +423,67 @@ the flag OFF, to confirm it is the same switch rather than one the flag created.
 Caveat by the rule: "implied yaw sigma" in the section above is an INFERENCE from path
 ratio, not a measurement, and path ratio also moves with jitter. Yaw sigma should be
 logged from P directly before that number is quoted again.
+
+---
+
+## 2026-10-18: twin-run diff. P blows up FIRST, and no rejection cascade is involved
+
+The fine sweep between 0.001 and 0.01 gives adjacent twins that differ by 33% in one
+parameter and land in different worlds:
+
+```
+  q_angular_vel     RMSE   median   path_ratio   rejects
+  0.001           41.131    8.403        0.302       101
+  0.0015          26.096    7.619        1.001       143   HEALTHY
+  0.002           67.471   11.997        0.173        67   DEGENERATE
+  0.003           28.410    7.475        0.303       111
+  0.004           32.709    7.688        1.002       148
+  0.005           29.892    8.044        0.992       146
+  0.0065          34.443    8.490        0.173        72
+  0.008           43.234    8.712        0.192       112
+  0.01            26.696    7.832        1.053       145
+```
+
+Path ratio is bimodal: every run is either about 1.00 or about 0.2, with nothing
+between. Healthy runs reject 143 to 148, degenerate ones 67 to 112.
+
+Running the 0.0015 / 0.002 twins with per-fix logging:
+
+```
+    fix#   t_rel    sep_m   sigma_h   sigma_d   acc_h   acc_d
+       0     0.0    0.000    1.0694    1.0694       1       1
+     100    22.6    0.013    1.8174    1.7065       1       1
+     450    92.6    0.548    1.4135    1.5508       1       1
+    1000   206.5    0.001    1.7572    1.7426       1       1
+    1500   362.2    0.751    1.5058    2.9761       1       1   <- sigma doubles
+    2000   464.2    0.574    1.3803    2.9405       1       1
+    2500   564.4    0.880    1.7077    2.9498       1       1
+    2576   579.6   13.559    1.5301    2.9337       0       1   <- first disagreement
+```
+
+**Three findings, and all three contradict the obvious story.**
+
+**1. Both twins accepted EVERY fix for 2576 fixes. Zero rejections in either, right up to
+the first disagreement.** There is no rejection cascade, no lockout, no latch. Whatever
+causes this, it is not the gate throwing fixes away.
+
+**2. The covariance diverges 217 seconds before the position does.** The degenerate
+twin's sigma doubles from about 1.4 to 2.94 at fix 1500, t = 362 s, and stays there,
+while the healthy twin holds 1.4 to 1.7. Position separation is still under 1 m at that
+point and only jumps to 13.6 m at fix 2576, t = 580 s.
+
+**3. So P blows up FIRST.** This answers the question the two levers hung on. It is not a
+bad fix accepted while P was sane and then wrecking everything. It is the covariance
+growing, which widens the gate, which lets through a fix the healthy twin rejects
+(mah2 0.13 against 16.58 on the same fix, threshold 16.27).
+
+**The lever is therefore bounding covariance growth at its source, not the GNSS
+measurement model.** That is the `ground_robot` bias freeze now and IMU-as-input later,
+and it is consistent with OFF_frozen winning on both a win and a loss.
+
+The separate point about R stands on its own evidence and is unaffected: with gates off,
+even a sane-P run at q = 0.01 collapses from 26.696 to 259.383, so some NCLT fixes are
+far worse than the covariance they declare. That is a second, independent defect.
+
+What is still not known is what happens at t = 362 s to double the covariance. That is
+the next thing to look at, and the twins make it a seconds-long experiment.
