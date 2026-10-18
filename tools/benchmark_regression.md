@@ -1039,3 +1039,74 @@ failure.** Stated as three separable jobs:
 
 That is a narrower and more useful statement than "fusion adds nothing", and it is what
 the public correction should say.
+
+---
+
+## 2026-10-18, CORRECTED AGAIN: two failure types, and the split is NOT created at fix times
+
+The 4.7x in the section above mixed scoring points a second time: it put a **fix-times**
+GNSS number beside a **full-trajectory** FusionCore number. Raw GNSS only exists at fix
+times, so a full-trajectory GNSS score is not defined at all. Like for like:
+
+```
+  sequence      GNSS @fix    FC @fix    FC full_traj
+  2012-06-15        9.046     10.945          78.139
+  2013-04-05        8.562     10.149          16.677
+```
+
+**At fix times FusionCore is nearly identical on those two sequences, 10.945 against
+10.149.** So on 2012-06-15 the filter is NOT creating the split while GNSS is present.
+The 78.139 against 16.677 gap has to come from the time when GNSS is absent. **It is
+losing it in the gaps.**
+
+That withdraws "the split is created by the filter while GNSS is present" as a general
+claim. It splits into two distinct failures:
+
+**Type A, blackout drift. 2012-06-15.** Fine at fix times (10.945 against a GNSS 9.046),
+bad over the full trajectory (78.139). The error accumulates inside the gaps.
+
+**Type B, excursions with GNSS present. 2012-08-20 and 2012-02-04.** Bad even at fix
+times: 176.805 against a GNSS 32.238, and 144.903 against 58.672. This is the shape
+predicted for failed re-acquisition: the filter drifts during a gap, then the returning
+fixes are far from its prediction, so either the gate rejects them or an inflated R pulls
+it back slowly, and the excursion lasts until it reconverges.
+
+The two need different fixes. Type A needs better coasting. Type B needs re-acquisition
+and re-anchoring. Neither is an attitude representation problem.
+
+### The blackout experiment, with predictions written first
+
+For every GNSS gap of 10 s or more, record error at gap start, peak error, error at gap
+end, the drift curve against time since the last fix, and **re-convergence time**, the
+seconds after the gap before error returns to GNSS-level. Same for four dumb baselines:
+hold last fix, constant-velocity extrapolation, encoder plus gyro dead reckoning, and
+robot_localization.
+
+```
+  P1  On 2012-06-15 most of FusionCore's full-trajectory error sits INSIDE the gaps.
+  P2  On 2012-08-20 most of it sits in the RE-CONVERGENCE windows just after the gaps.
+  P3  If FusionCore does not clearly beat encoder-plus-gyro dead reckoning inside the
+      gaps, the inertial coast mode is adding nothing.
+```
+
+### Process: every number now carries its provenance
+
+`tools/provenance.py`. A measurement carries four fields and two of them refuse to be
+compared unless all four match: **pipeline** (node, replay, sim), **config**, **scoring
+points** (full_traj, fix_times, gaps, window), and **coverage** as a fraction of the
+sequence.
+
+Seven comparisons were published wrong this week and **not one was a wrong number**.
+Every one was a correct number compared against a number from somewhere else. A
+raw-numbers rule cannot catch that, because the numbers were raw and correct. Replaying
+the structural failures through the rule:
+
+```
+  "185.195 vs 9.193, 20x"   CAUGHT: config full12_shipped vs frozen_profile
+  "GNSS 9.046 vs FC 78.139" CAUGHT: scoring points fix_times vs full_traj
+  truncated 2012-01-08      CAUGHT: covers only 66% of its sequence
+  GNSS 9.046 vs FC 10.945   ALLOWED, ratio 0.826
+```
+
+Coverage is a field because of the truncated log: anything under 99% refuses to be
+compared at all.
