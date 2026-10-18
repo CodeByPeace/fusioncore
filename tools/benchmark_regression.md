@@ -487,3 +487,58 @@ far worse than the covariance they declare. That is a second, independent defect
 
 What is still not known is what happens at t = 362 s to double the covariance. That is
 the next thing to look at, and the twins make it a seconds-long experiment.
+
+---
+
+## OPEN DEFECT: NCLT GNSS fixes are worse than the covariance they declare
+
+Filed separately because it is independent of the bistability above and has its own
+evidence.
+
+With all outlier gates disabled, a run whose covariance is demonstrably sane collapses
+anyway. 2013-04-05, attitude flag ON, `q_angular_vel = 0.01`, the healthiest cell in the
+sweep:
+
+```
+  gates ON    RMSE  26.696   median  7.832   path ratio 1.053   rejects 145
+  gates OFF   RMSE 259.383   median 40.609   path ratio 0.161   rejects  12
+```
+
+A 9.7x degradation with no change to the filter's tuning. The chi-squared gate is the
+only thing standing between the filter and a set of fixes whose declared covariance does
+not describe them. The record already carries the extreme case: on 2012-08-20 two raw
+fixes 0.07 s apart differ by 825 m, which is 11789 m/s on a 1.5 m/s Segway, and no
+reported sigma describes that.
+
+**Consequence: the filter currently depends on the gate for correctness, not just for
+robustness.** That is a fragile place to be, because the same experiment shows the gate
+stops working when the covariance it normalises by grows.
+
+The honest fix is on the measurement side rather than the filter side: set R from the
+quality the receiver actually reports, reject degraded fix modes outright, and
+cross-check successive fixes against each other and against odometry before trusting
+them. Any absolute innovation limit added here must come with re-anchoring when several
+successive fixes agree with each other but disagree with the filter, because that means
+the filter is the wrong one, and without it this rebuilds the latch bug that once
+disabled spike rejection for entire runs.
+
+## Agreed plan and stop rule, 2026-10-18
+
+1. **Find what doubles the covariance at t = 362 s.** Rerun the 0.0015 / 0.002 twins on
+   2013-04-05 with the flag on, logging every discrete branch (ZUPT on and off, coast
+   enter and exit, adaptive-noise switches, wheel-odometry gate) plus yaw sigma straight
+   from P and the effective gate radius `sqrt(chi2 * S)` in metres, step by step from
+   340 to 380 s. Report the first step where P differs by more than 1% and which branch
+   fired at or just before it.
+2. **Confirm it is the same loop in the shipped config.** Same twin method on
+   2012-08-20 with the flag OFF, sweeping q or the gate threshold until the outcome
+   flips, and check the pattern holds: P first, then the gate widens, then a bad fix
+   gets through.
+3. **Stop rule. After 1 and 2, or two sessions at most, pause the deep dive and ship.**
+   Run the `ground_robot` freeze across all six available bags in replay; if it wins on
+   most, propose it as the default for the wheeled-robot preset. Fix the projection gap
+   so `export_bag.py` and the node share one lat/lon projection. Rerun the benchmarks
+   once, then draft the public correction with the updated numbers.
+
+Standing rules for all of it: replay only and never through the live node for any
+benchmark; report RMSE, median and path ratio together; the attitude flag stays off.
