@@ -183,6 +183,30 @@ struct UKFParams {
   // the evidence that the cheap half of it is not a shortcut. Kept, off, for that reason.
   bool tangent_space_quaternion_mean = false;
 
+  // Treat attitude DEVIATIONS as a local rotation vector instead of a plain
+  // 4-vector difference, in all three places the UKF measures one: the predict
+  // covariance, the update cross-covariance, and the correction applied to the
+  // state.
+  //
+  // Why this and not the mean. Fixing only the mean was tried twice (Markley, and
+  // tangent_space_quaternion_mean above) and neither helped, because the mean was
+  // never the problem. Measured 2026-10-18 with tools/repro/yaw_pullback.cpp:
+  // start 30 deg off, feed a perfect encoder, a perfect IMU and TRUTH GNSS at 1 Hz,
+  // and heading random-walks the whole circle either way (-142, +45, -74, +109 deg
+  // with the tangent mean on). Position stays inside 1.2 m throughout, so the
+  // filter tracks WHERE it is and cannot work out which way it points.
+  //
+  // The cause is that a covariance built from q_sigma - q_mean measures a chord in
+  // R^4, not a rotation. The Kalman gain then relates a position innovation to a
+  // quaternion correction with the wrong magnitude, so heading is nudged in a
+  // plausible direction by a meaningless amount, forever.
+  //
+  // This keeps the 23-dimensional state and covariance. The QW slot carries the
+  // scalar part of the error, which is ~0 by construction, so its variance is
+  // floored to keep P invertible. That is the pragmatic form of USQUE
+  // (Crassidis & Markley 2003) rather than a full reduction to 22 dimensions.
+  bool tangent_space_attitude = false;
+
   // Process noise: how much we trust the motion model
   double q_position     = 0.01;   // m²/step
   // Quaternion regularization: keeps Q positive-definite.

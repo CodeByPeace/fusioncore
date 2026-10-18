@@ -80,6 +80,58 @@ void UKF::build_process_noise() {
                    params_.q_encoder_wz_bias;
 }
 
+
+// Local rotation error between a sigma point's attitude and a reference, written
+// into the quaternion slots of a state-difference vector.
+//
+// dq = q_ref^-1 * q_sigma is the rotation FROM the reference TO the sigma point.
+// For a small rotation its vector part is dtheta/2, so 2*vec(dq) is the rotation
+// vector in the reference's own frame, which is what a covariance should measure.
+// The scalar slot carries dq.w - 1, which is second order and therefore ~0.
+static void attitude_difference(fusioncore::StateVector& diff,
+                                const fusioncore::StateVector& sigma,
+                                const fusioncore::StateVector& ref)
+{
+  using namespace fusioncore;
+  Eigen::Quaterniond qs(sigma[QW], sigma[QX], sigma[QY], sigma[QZ]);
+  Eigen::Quaterniond qr(ref[QW],   ref[QX],   ref[QY],   ref[QZ]);
+  if (qs.norm() < 1e-12 || qr.norm() < 1e-12) return;   // leave the plain diff alone
+  qs.normalize(); qr.normalize();
+  Eigen::Quaterniond dq = qr.conjugate() * qs;
+  if (dq.w() < 0.0) { dq.coeffs() *= -1.0; }            // short way round
+  diff[QW] = dq.w() - 1.0;
+  diff[QX] = 2.0 * dq.x();
+  diff[QY] = 2.0 * dq.y();
+  diff[QZ] = 2.0 * dq.z();
+}
+
+// Apply a correction whose quaternion slots are a local rotation vector.
+// q_new = q_old * exp(dtheta/2), which keeps the result on the unit sphere by
+// construction instead of adding and renormalising.
+static void apply_attitude_correction(fusioncore::StateVector& x,
+                                      const fusioncore::StateVector& correction)
+{
+  using namespace fusioncore;
+  Eigen::Vector3d dtheta(correction[QX], correction[QY], correction[QZ]);
+  Eigen::Quaterniond q(x[QW], x[QX], x[QY], x[QZ]);
+  if (q.norm() < 1e-12) return;
+  q.normalize();
+  const double angle = dtheta.norm();
+  Eigen::Quaterniond dq;
+  if (angle > 1e-12) {
+    const double half = 0.5 * angle;
+    const Eigen::Vector3d axis = dtheta / angle;
+    dq = Eigen::Quaterniond(std::cos(half),
+                            std::sin(half) * axis.x(),
+                            std::sin(half) * axis.y(),
+                            std::sin(half) * axis.z());
+  } else {
+    dq = Eigen::Quaterniond(1.0, 0.5*dtheta.x(), 0.5*dtheta.y(), 0.5*dtheta.z());
+  }
+  Eigen::Quaterniond qn = (q * dq).normalized();
+  x[QW] = qn.w(); x[QX] = qn.x(); x[QY] = qn.y(); x[QZ] = qn.z();
+}
+
 Eigen::MatrixXd UKF::generate_sigma_points() {
   int n_sigma = 2 * n_aug_ + 1;
   Eigen::MatrixXd sigma(STATE_DIM, n_sigma);
@@ -139,8 +191,27 @@ Eigen::MatrixXd UKF::generate_sigma_points() {
   StateMatrix L = llt.matrixL();
   sigma.col(0) = state_.x;
   for (int i = 0; i < n_aug_; ++i) {
-    sigma.col(i + 1)          = state_.x + L.col(i);
-    sigma.col(i + 1 + n_aug_) = state_.x - L.col(i);
+    if (params_.tangent_space_attitude) {
+      // The attitude slots of L are a ROTATION VECTOR once P measures rotation,
+      // so they have to be composed onto the quaternion, not added to it. Adding
+      // them was the fourth and last place the two representations were mixed:
+      // with the other three fixed and this one left additive, heading converged
+      // but position diverged to 13 km with 45 of 120 fixes rejected, because the
+      // sigma cloud no longer matched the covariance that generated it.
+      StateVector plus  = state_.x + L.col(i);
+      StateVector minus = state_.x - L.col(i);
+      plus.segment<4>(QW)  = state_.x.segment<4>(QW);
+      minus.segment<4>(QW) = state_.x.segment<4>(QW);
+      const StateVector dplus  =  L.col(i);
+      const StateVector dminus = -L.col(i);
+      apply_attitude_correction(plus,  dplus);
+      apply_attitude_correction(minus, dminus);
+      sigma.col(i + 1)          = plus;
+      sigma.col(i + 1 + n_aug_) = minus;
+    } else {
+      sigma.col(i + 1)          = state_.x + L.col(i);
+      sigma.col(i + 1 + n_aug_) = state_.x - L.col(i);
+    }
   }
 
   // Keep each sigma point's attitude a physically meaningful sample. See
@@ -236,7 +307,14 @@ void UKF::predict(double dt) {
     // vector would treat it as a quaternion and scale it to unit length,
     // completely corrupting the covariance.
     StateVector diff = sigma_pred.col(i) - x_pred;
+    if (params_.tangent_space_attitude) attitude_difference(diff, sigma_pred.col(i), x_pred);
     P_pred += Wc_[i] * diff * diff.transpose();
+  }
+  if (params_.tangent_space_attitude) {
+    // QW carries dq.w - 1, which is second order, so its variance collapses toward
+    // zero and would make P singular in that direction. Floor it.
+    constexpr double kScalarAttitudeVarFloor = 1e-6;
+    P_pred(QW, QW) = std::max(P_pred(QW, QW), kScalarAttitudeVarFloor);
   }
   state_.x = x_pred;
   state_.P = P_pred;
@@ -294,6 +372,7 @@ Eigen::Matrix<double, z_dim, 1> UKF::update(
     for (int d = 0; d < z_dim; ++d)
       if (angle_dims & (1u << d)) z_diff[d] = normalize_angle(z_diff[d]);
     StateVector x_diff = sigma.col(i) - state_.x;  // plain diff, no angle wrapping needed
+    if (params_.tangent_space_attitude) attitude_difference(x_diff, sigma.col(i), state_.x);
     S   += Wc_[i] * z_diff * z_diff.transpose();
     Pxz += Wc_[i] * x_diff * z_diff.transpose();
   }
@@ -308,7 +387,14 @@ Eigen::Matrix<double, z_dim, 1> UKF::update(
   PxzMatrix K = S_ldlt.solve(Pxz.transpose()).transpose();
   const StateVector correction = K * innovation;
   last_pos_correction_ = std::hypot(correction[X], correction[Y]);
-  state_.x = normalize_state(state_.x + correction);
+  if (params_.tangent_space_attitude) {
+    StateVector x_new = state_.x + correction;
+    x_new.segment<4>(QW) = state_.x.segment<4>(QW);   // attitude handled multiplicatively
+    apply_attitude_correction(x_new, correction);
+    state_.x = normalize_state(x_new);
+  } else {
+    state_.x = normalize_state(state_.x + correction);
+  }
   state_.P -= K * S * K.transpose();
   // Symmetrize after each update to prevent floating-point asymmetry from
   // accumulating across the ~100 Hz IMU + 1 Hz GPS update stream.
