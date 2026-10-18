@@ -323,3 +323,49 @@ small-angle bug was partially masking the cancellation defect by shrinking the c
 Both conclusions from the superseded section survive: the attitude bug was not the NCLT
 lock-in, and the bistability question is still open.
 
+
+---
+
+## 2026-10-18: the old tuning WAS compensating for the leak, and a cheap bistability repro
+
+Path length ratio has a closed form under heading uncertainty: averaging `R(psi)*v` over
+a yaw spread of sigma gives `v*exp(-sigma^2/2)`, so the ratio measures yaw sigma
+directly. A ratio of 0.171 implies **sigma = 107.7 degrees**, which is approaching
+uniform. So the under-travel is not a defect in the averaging. It is correct averaging
+fed a covariance that is far too large.
+
+Hypothesis tested: `ukf.q_angular_vel` was tuned against a covariance that leaked up to
+40% on every rebuild, so with the leak fixed the same value inflates without limit.
+
+2013-04-05, attitude flag ON, bias free, sweeping only `ukf.q_angular_vel`:
+
+```
+  q_angular_vel      RMSE     median   path_ratio   implied yaw sigma
+  0.1  (shipped)   64.159     11.029        0.171       107.7 deg
+  0.01             26.696      7.832        1.053         0.0 deg
+  0.001            41.131      8.403        0.302        88.7 deg
+  1e-4             28.673      7.856        0.174       107.2 deg
+  1e-5             31.042      8.067        0.997         4.4 deg
+```
+
+**Confirmed.** Dropping the shipped 0.1 to 0.01 takes the path ratio from 0.171 to
+1.053, RMSE from 64.159 to 26.696 and the median from 11.029 to 7.832. A parameter
+tuned around a bug became wrong the moment the bug was fixed.
+
+**But look at the column, because it is not monotonic.** 0.01 is healthy, 0.001 is
+degenerate, 1e-4 is degenerate, 1e-5 is healthy again. Three orders of magnitude of
+process noise and the filter flips between a path ratio near 1.0 and one near 0.17, with
+nothing in between.
+
+**That is the bistability, reproduced in seconds instead of 90 minutes.** The same input,
+the same code, a small parameter change, and two qualitatively different outcomes: one
+tracking, one with yaw sigma near 108 degrees. Up to now bistability was an inference
+from the fact that no input feature separates the wins from the losses. This is a
+controlled, cheap, repeatable handle on it.
+
+**It does not rescue the flag.** The best ON cell is 26.696 against 16.677 for the
+shipped default with the flag off, so the flag still loses on this sequence even when
+tuned. It stays off.
+
+The useful output is the repro, not the tuning. Any future work on the wrong-basin
+question should start here, because it costs seconds per sample.
