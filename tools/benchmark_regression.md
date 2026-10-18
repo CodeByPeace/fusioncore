@@ -1475,3 +1475,94 @@ They are NOT comparable and no claim is made from putting them side by side; the
 figures appear only as the window reference, which is a legitimate use of them. Raw
 GNSS still beats the filter on these sequences at identical scoring points, as
 measured on 2026-10-17. A closes part of that gap. It does not close it.
+
+## 2026-10-18  P3 on NCLT: the dataset cannot answer the question
+
+P3 asked whether the filter's coast during a GNSS blackout beats plain dead
+reckoning from the same sensors. On 2012-06-15 that matters most, because 84.6% of
+that sequence's error sits in a single 462 s gap that re-anchoring cannot reach.
+
+The answer is that NCLT cannot settle it. Ground truth covers 18% of GNSS gap time:
+
+    sequence       gaps    gap_s  truth_s     cov
+    2012-02-04        5      511        0       0%
+    2012-06-15        1      462      276      60%
+    2012-08-20        4      545       87      16%
+    2012-09-28        4      431        0       0%
+    2013-04-05        5      556       77      14%
+    TOTAL            19     2505      440      18%
+
+Three of 19 gaps have enough truth to score. Two sequences have NO truth at all
+inside their gaps. This is not a quirk: NCLT's ground truth comes from a SLAM
+solution that degrades under the same conditions that take the GNSS out, so truth
+goes missing exactly where the blackout question lives.
+
+### A retraction, logged the same way as the seven on 2026-10-17
+
+The first run of this comparison reported that gyro dead reckoning from the filter's
+own heading beat the filter's coast by 3.4x on 2012-06-15, 22.2% of distance against
+76.1%. That number is withdrawn. Truth has a 185 s hole at the START of the 462 s
+gap, so dead reckoning was integrated over the full 462 s while the truth
+displacement it was scored against covered only the last 276 s. It was 462 s of
+integration measured against 276 s of movement.
+
+Same class of error: right arithmetic, wrong window. The guard now clips the scoring
+window to the truth-covered span and skips gaps with an internal truth hole over
+30 s. `tools/gap_deadreckon.py` prints the clipped fraction and the largest hole on
+every row so the next reader cannot miss it.
+
+A second withdrawn number from the same run: 2012-08-20's 228 s gap appeared to be
+the filter's best win, 28.4% against 62-74% for dead reckoning. That gap has a 140 s
+truth hole inside it and is now skipped, unscorable.
+
+### What the two scorable windows actually say
+
+    2012-06-15, gap 462s, truth covers 276s (60%), 377.7 m travelled
+                            err_m   %dist
+      filter coast          425.3   112.6
+      imuq @truth yaw       504.9   133.7
+      gyro @truth yaw       477.2   126.4
+      enc  @truth yaw       501.1   132.7
+      enc_neg @truth yaw    510.4   135.1
+      gyro @filter yaw      411.1   108.8
+      enc  @filter yaw      385.9   102.2
+      enc_neg @filter yaw   336.1    89.0
+
+    2013-04-05, gap 275s, truth covers 84s (31%), 114.9 m travelled
+                            err_m   %dist
+      filter coast          153.6   133.7
+      imuq @truth yaw       108.2    94.1
+      gyro @truth yaw       115.5   100.5
+      enc  @truth yaw       109.1    94.9
+      enc_neg @truth yaw     44.5    38.7
+      gyro @filter yaw      131.6   114.5
+      enc  @filter yaw      140.2   122.0
+      enc_neg @filter yaw   176.1   153.2
+
+`@truth yaw` hands dead reckoning the true heading at window entry, which the filter
+does not have, so those rows bound the filter's deficit rather than measure it.
+`@filter yaw` anchors dead reckoning at the filter's own heading and is the fair
+comparison.
+
+Two honest readings, and no more than two. First, every method is catastrophic in
+these windows: 89% to 153% of distance travelled. An error larger than the distance
+driven means the estimate is worse than asserting the robot never moved. Second,
+dead reckoning beats the coast on 2012-06-15 (336 against 425) and loses to it on
+2013-04-05 (132-176 against 154). With n=2 and 31-60% coverage, that is not a result
+in either direction.
+
+### Consequence
+
+The `enc_neg` column is the strongest of the eight on 2013-04-05 at truth yaw, 38.7%
+against 94.9% for `enc`. Negating the encoder yaw rate more than halves the error.
+That is consistent with the standing finding that the NCLT wheel yaw rate was never
+converted to ENU, and it is the fourth place that sign has shown up. It is suggestive
+and nothing more: on 2012-06-15 the same negation is the WORST column at filter yaw,
+153.2%.
+
+Two things follow. P3 needs a dataset whose ground truth survives the blackout, which
+means KAIST with its TUM ground truth or hardware with RTK, not NCLT. And the gap
+error shares in the window table above rest on the same partial coverage: 2012-06-15's
+"84.6% of error in the gap" is measured across 60% of that gap, and 2013-04-05's
+60-65% across 14% of its gaps. Those shares stand as written, because error can only
+be scored where truth exists, but they are not a claim about the uncovered 82%.
