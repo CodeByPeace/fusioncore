@@ -658,3 +658,50 @@ node remains the right integration test, checking that it lands within the repla
 figure plus the node's own known spread.
 
 Block 2 therefore passes with no code change, and Block 4 is unblocked.
+
+---
+
+## 2026-10-18, Block 4: the ground_robot freeze wins 6 of 6 in replay
+
+All six exported sequences through the deterministic core replay, shipped NCLT config,
+only the seven `ground_robot` keys changed between arms. Attitude flag OFF throughout.
+
+```
+  sequence     arm           RMSE    median   path_ratio    drift
+  2012-01-08   free        19.974     7.183        0.848     3.61
+  2012-01-08   frozen      19.423     7.123        0.877     3.63
+  2012-02-04   free       142.792    34.495        1.055    18.07
+  2012-02-04   frozen     142.311    34.582        1.108    18.90
+  2012-06-15   free        78.139    29.978        1.113    14.84
+  2012-06-15   frozen      64.295    18.164        1.180    12.94
+  2012-08-20   free       171.393    35.436        0.888    20.24
+  2012-08-20   frozen     145.765    31.618        0.967    18.76
+  2012-09-28   free        23.638     7.235        1.048     3.43
+  2012-09-28   frozen      22.501     7.075        1.084     3.38
+  2013-04-05   free        16.677     6.960        1.019     3.17
+  2013-04-05   frozen      15.355     7.001        1.073     3.07
+```
+
+**Frozen is better on RMSE on all six**: -2.8%, -0.3%, -17.7%, -15.0%, -4.8%, -7.9%.
+
+**Median is better on four of six**, and the two it loses are 34.582 against 34.495 and
+7.001 against 6.960, which are 0.25% and 0.6%. The biggest median gain is 2012-06-15 at
+29.978 to **18.164**, a 39% improvement.
+
+**No path-ratio degeneracy anywhere.** Every cell sits between 0.848 and 1.180, and the
+freeze moves every ratio upward, which helps the two sequences that were under-travelling
+(0.848 to 0.877 and 0.888 to 0.967) and slightly overshoots on the four that were already
+above 1.0.
+
+Honest reading. This is **n=1 per cell**, and 2012-02-04 carries a measured 14.80% spread
+through the node, so its -0.3% means nothing on its own. The two large gains, -17.7% and
+-15.0%, are outside any spread recorded for those sequences. The consistent direction
+across six sequences is worth more than any single row.
+
+**What this does and does not justify.** It is strong evidence for recommending
+`platform.profile: ground_robot` to anyone running a wheeled robot with encoders, and the
+profile README can now say six sequences rather than three. It is **not** on its own a
+reason to change the library default from `general`: `fusioncore_core` still has to be
+correct for a platform that leaves the ground plane, and the scope statement shipped
+today says the library runs on those with nothing frozen. Flipping that default is a
+separate decision with a separate blast radius.

@@ -125,6 +125,28 @@ already uses, is indistinguishable from meaning it. **If you adopt a profile, de
 the lines you are handing over to it**, and read the node's log to confirm what it
 applied rather than assuming.
 
+## Validated across six sequences in replay, 2026-10-18
+
+The table above is from node runs on three sequences. Since then all six sequences that
+have an exported input bag were run through the deterministic core replay, shipped NCLT
+config, only the seven profile keys changed between arms:
+
+| sequence | free RMSE | frozen RMSE | free median | frozen median | change in RMSE |
+|---|---|---|---|---|---|
+| 2012-01-08 | 19.974 | **19.423** | 7.183 | **7.123** | -2.8% |
+| 2012-02-04 | 142.792 | **142.311** | **34.495** | 34.582 | -0.3% |
+| 2012-06-15 | 78.139 | **64.295** | 29.978 | **18.164** | **-17.7%** |
+| 2012-08-20 | 171.393 | **145.765** | 35.436 | **31.618** | **-15.0%** |
+| 2012-09-28 | 23.638 | **22.501** | 7.235 | **7.075** | -4.8% |
+| 2013-04-05 | 16.677 | **15.355** | **6.960** | 7.001 | -7.9% |
+
+**Better on RMSE on all six.** Better on median on four of six, and the two it loses are
+by 0.25% and 0.6%. Path length ratio stays between 0.848 and 1.180 everywhere, so none of
+this is a degenerate trajectory flattering the alignment.
+
+n=1 per cell, and 2012-02-04 carries a 14.80% spread of its own, so read the direction
+across six sequences rather than any single row.
+
 ## Before you trust it on your robot
 
 Run `tools/bag_report.py` on one of your bags first. If it says your IMU and wheels
