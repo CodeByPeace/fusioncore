@@ -1344,3 +1344,134 @@ invisible, and the real controller-facing cost, the size of the position jump, i
 measured on NCLT rather than assumed away. If the jumps are large the A/B to run is a
 soft re-anchor: inflate `P_pos` and yaw `P` and let the normal update pull the state in
 over a few fixes, instead of setting the state directly.
+
+## 2026-10-18  Re-anchoring on NCLT: the four arms, all five sequences
+
+Provenance for every number below: pipeline `replay`, config `nclt_shipped` plus the
+six free parameters the sweep leaves open, scoring points `full_traj` for the fused
+RMSE and `fix_times` for the raw GNSS reference, coverage 100%. The exports live in
+`/home/manankharwar/nclt/exported/` and are the re-exported set, not the truncated
+2012-01-08 material whose numbers were withdrawn on 2026-10-17.
+
+### The arms
+
+A is `gnss.reanchor_enabled=1`. B is `adaptive.r_max_scale=200 adaptive.subtract_hph=1`.
+
+    sequence     arm          RMSE    median  path_ratio
+    2012-02-04   baseline  142.792    34.495       1.055
+    2012-02-04   A          61.357    13.893       1.005
+    2012-02-04   B         160.648    41.396       1.058
+    2012-02-04   AB         61.221    13.858       1.007
+    2012-08-20   baseline  171.393    35.436       0.888
+    2012-08-20   A          60.674     8.678       0.870
+    2012-08-20   B         167.084    34.558       0.890
+    2012-08-20   AB         60.299     8.752       0.870
+
+B alone makes 2012-02-04 worse, as predicted on 2026-10-17 before it was run. AB is
+within 0.2% of A on both. B contributes nothing once A is present, so the ceiling
+stays off and A ships alone.
+
+### A on all five
+
+    sequence     arm          RMSE    median  path_ratio
+    2012-02-04   baseline  142.792    34.495       1.055
+    2012-02-04   A          61.357    13.893       1.005
+    2012-06-15   baseline   78.139    29.978       1.113
+    2012-06-15   A          78.109    30.030       1.113
+    2012-08-20   baseline  171.393    35.436       0.888
+    2012-08-20   A          60.674     8.678       0.870
+    2012-09-28   baseline   23.638     7.235       1.048
+    2012-09-28   A          13.750     6.553       1.028
+    2013-04-05   baseline   16.677     6.960       1.019
+    2013-04-05   A          16.005     6.996       1.014
+
+No sequence regresses. Two improve by more than 2x, one by 1.7x, two are flat. This
+is the first change this month that improved real data without a single regression,
+and the contrast with the attitude flag is the point: that one passed its clean tests
+and then cost 3.8x on real data, which is why A was not believed until this table.
+
+### Where the error moved
+
+Windows come from the RAW fix stream. The re-convergence threshold is pinned with
+`--ref` to the raw GNSS median per sequence, measured at fix times with the same
+alignment and error metric the budget tool uses:
+
+    2012-02-04  14.900   2012-06-15   5.059   2012-08-20   7.152
+    2012-09-28   6.484   2013-04-05   5.822
+
+Pinning matters. Without `--ref` the tool falls back to the fused steady median,
+which is the thing under test and changes between arms, so %time in recovery is not
+comparable across arms. The fallback prints a FALLBACK warning for exactly this
+reason. With the reference pinned, the baseline rows reproduce the 2026-10-17
+classification exactly, which is what validates the choice.
+
+    sequence     arm      | gap %t  gap %e | rec %t  rec %e | std %t  std %e | rec RMSE
+    2012-02-04   baseline |   0.0%    0.0% |  44.5%   94.5% |  55.5%    5.5% |  215.799
+    2012-02-04   A        |   0.0%    0.0% |  11.5%   94.5% |  88.5%    5.5% |  180.152
+    2012-06-15   baseline |   8.7%   84.6% |   0.0%    0.0% |  91.3%   15.4% |    0.000
+    2012-06-15   A        |   8.7%   84.6% |   0.0%    0.0% |  91.3%   15.4% |    0.000
+    2012-08-20   baseline |   2.2%    2.8% |  22.4%   94.0% |  75.5%    3.2% |  350.265
+    2012-08-20   A        |   2.2%   19.2% |  10.9%   78.5% |  87.0%    2.4% |  161.680
+    2012-09-28   baseline |   0.0%    0.0% |   8.8%   85.8% |  91.2%   14.2% |   75.269
+    2012-09-28   A        |   0.0%    0.1% |   6.7%   60.7% |  93.3%   39.3% |   42.494
+    2013-04-05   baseline |   1.8%   60.3% |   3.6%   14.5% |  94.6%   25.2% |   33.362
+    2013-04-05   A        |   1.8%   65.4% |   3.7%    7.2% |  94.6%   27.5% |   22.268
+
+The mechanism is visible: on 2012-02-04 the time spent in re-convergence falls 44.5%
+to 11.5%, a factor of 3.9, and the re-convergence RMSE falls 215.8 to 180.2. The
+error SHARE stays at 94.5% because re-convergence is still where this sequence's
+error lives. The RMSE gain comes mostly from spending less time out there, not from
+a smaller excursion. On 2012-08-20 both move: 22.4% to 10.9% of time, 350.3 to 161.7
+RMSE.
+
+The two flat sequences explain themselves. 2012-06-15 has 84.6% of its error in a
+single 462 s gap and 2013-04-05 has 60-65% in its gaps. Re-anchoring acts after a
+gap ends, so it cannot touch error accumulated during one. That error is dead
+reckoning drift and it is P3's subject, still untouched.
+
+### Does it ever fire when the filter is healthy
+
+`hardware/replay.cpp` now emits a `REANCHOR <t> <jump_m>` line per event, so the
+feature's behaviour is read off its own log rather than inferred from an RMSE
+difference. (hardware/ is gitignored, so that change is local only.)
+
+    sequence     events  med jump  max jump
+    2012-02-04       14     34.88    281.44
+    2012-06-15        1     16.84     16.84
+    2012-08-20        6     59.89    787.11
+    2012-09-28        4    110.57    196.97
+    2013-04-05        5     14.79    173.68
+
+Rare: 30 events across roughly 25,000 s of driving. The trajectory's largest
+single-step jump equals the largest logged re-anchor on 2012-08-20, 787.11 against
+787.10, so the discontinuity IS the re-anchor and not a side effect. It is also not
+new behaviour: the baseline's own largest jumps are 414.29 and 716.65 on these two
+sequences, so the filter was already making excursions of this size without being
+told to.
+
+Each event scored by mean error in the 10 s before against the 2-12 s after:
+
+    sequence     better  WORSE  unscorable
+    2012-02-04        7      1           6
+    2012-06-15        1      0           0
+    2012-08-20        3      0           3
+    2012-09-28        2      0           2
+    2013-04-05        2      0           3
+
+15 better, 1 worse, 14 unscorable because ground truth is sparse there. Unscorable is
+reported as its own column rather than folded into either side; an earlier version of
+the script counted them as "better" because `nan > nan` is false, which is the same
+class of labelling error as the seven logged on 2026-10-17.
+
+The safety property is the lowest pre-event error across all scorable events: 48.22 m,
+against raw GNSS medians of 5 to 15 m. No re-anchor fired while the filter was
+healthy. The clearest single event is 2012-08-20 at t=4000.4: a 787 m jump took the
+error from 798.07 m to 16.79 m.
+
+### What this does not say
+
+The fused RMSEs here are full-trajectory and the raw GNSS numbers are at fix times.
+They are NOT comparable and no claim is made from putting them side by side; the raw
+figures appear only as the window reference, which is a legitimate use of them. Raw
+GNSS still beats the filter on these sequences at identical scoring points, as
+measured on 2026-10-17. A closes part of that gap. It does not close it.
