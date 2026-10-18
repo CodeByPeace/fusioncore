@@ -966,3 +966,76 @@ fusion is actually for and where raw GNSS has no answer at all. So the correct s
 is narrow and still damaging: **where GNSS is available, fusion is not improving on it,
 and is adding excursions.** Quantifying the blackout case needs a different experiment,
 scoring only inside the gaps, and that has not been run.
+
+---
+
+## 2026-10-18, CORRECTION: the 20x claim was wrong, and 2012-01-08's replay data is invalid
+
+Two errors in the section above, both mine, found by a label check.
+
+### Error 1: the "20x" mixed three different things
+
+I wrote that 2012-01-08 and 2013-04-05 have near-identical GNSS quality while FusionCore
+scores "185.195 and 9.193, same input quality, 20x different output". Those two numbers
+are not comparable to each other or to the table they sat next to:
+
+```
+  185.195   node run, full12 2026-10-12, FULL trajectory, shipped config
+    9.193   node run, frozen-config A/B, FULL trajectory, ground_robot profile
+   20.606   replay, AT GNSS FIX TIMES, free arm      <- what the table actually showed
+   10.149   replay, AT GNSS FIX TIMES, free arm
+```
+
+Different pipelines, different configs, different scoring points. **At fix times in one
+pipeline the ratio is 2.0x, not 20x.**
+
+### Error 2: 2012-01-08's exported log is TRUNCATED
+
+It was exported from `profile4_20261017_1420`, which is the run stopped partway through on
+request. Measured span against the sequence duration:
+
+```
+  sequence      log span   expected   coverage
+  2012-01-08        3740       5640        66%    <- INVALID
+  2012-02-04        4711       4740        99%
+  2012-06-15        3308       3300       100%
+  2012-08-20        5030       5040       100%
+  2012-09-28        4681       4680       100%
+  2013-04-05        4181       4200       100%
+```
+
+**Every 2012-01-08 replay number reported today is on two thirds of the sequence** and is
+withdrawn: the free/frozen row (19.974 and 19.423) and the GNSS-only row. No complete
+2012-01-08 input bag exists, because input recording postdates that run, so it cannot be
+re-measured without a node run. The other five sequences are 99 to 100% and stand.
+
+### The finding survives, at 4.7x, without 2012-01-08
+
+Like for like, replay pipeline, free arm, full trajectory:
+
+```
+  sequence      GNSS RMSE      FC RMSE
+  2012-06-15        9.046       78.139
+  2013-04-05        8.562       16.677
+```
+
+**GNSS quality within 6% of each other, FusionCore 4.7x apart.** The conclusion is
+unchanged and the magnitude is smaller: the split is created by the filter, not inherited
+from the input.
+
+### A fairer reading of "median equals raw GNSS"
+
+Consumer GNSS error is strongly time correlated, multipath and slow biases rather than
+white noise, and no amount of odometry averages away a slow bias without a second
+absolute reference. **So matching raw GNSS in the median may be the ceiling, not a
+failure.** Stated as three separable jobs:
+
+1. **Do not make it worse where GNSS is good.** Medians pass on four of five valid
+   sequences.
+2. **Reject outliers without creating excursions of your own.** FAILS: RMSE is above raw
+   GNSS on every sequence while the median is not.
+3. **Bound drift during blackouts.** NOT MEASURED. This is the actual value proposition
+   and there is still no number for it.
+
+That is a narrower and more useful statement than "fusion adds nothing", and it is what
+the public correction should say.
