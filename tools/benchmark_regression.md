@@ -1295,3 +1295,52 @@ piece's contribution is attributable rather than assumed.
 - **Set the ceiling from data.** Take the real ratio of GNSS error to declared sigma from
   the Phase 2 noise table and use roughly its 99th percentile, rather than picking 10 or
   100 by hand. Both hand-picked values above are wrong in opposite directions.
+
+---
+
+## 2026-10-18: the defect in its purest form, and it needs no blackout
+
+The adversarial multipath test, `tools/repro/reanchor_multipath.cpp`. A consistent 20 m
+GNSS offset for 30 s, continuous healthy coverage, **no blackout anywhere in the run**:
+
+```
+  reanchor OFF   0 re-anchors   22.062 m during the offset   129.968 m 40 s after
+  reanchor ON    2 re-anchors   21.308 m during the offset     1.226 m 40 s after
+```
+
+**Without re-anchoring the filter does not resist the multipath, it never recovers from
+it.** 130 m out, from a 30 s offset, with GNSS present and healthy throughout.
+
+The chain, which is the core defect stated as plainly as it can be:
+
+1. While the offset lasts the filter reasonably follows fixes that are mutually
+   consistent.
+2. **That sideways step looks like sideways motion, so it corrupts heading.**
+3. When the fixes snap back to truth they now disagree with the filter, so the gate
+   rejects them.
+4. The filter coasts on odometry **with a wrong heading**, and keeps going.
+
+**No blackout is required. Any event that moves the filter far enough that good fixes
+look like outliers will do it.** That is why 2012-02-04 spends 44.5% of its run in
+re-convergence while having ZERO gaps of 10 s or more: there was never a blackout to
+recover from.
+
+This stops being a long-gap edge case and becomes the most important defect in the
+repository.
+
+### The guard that was proposed and then measured
+
+The expected requirement was that re-anchoring must not fire while the filter looks
+healthy, enforced by requiring a recent gap, an elevated `P_pos`, or a one-sided
+innovation that began during degraded coverage. The reasoning was sound: a sudden
+consistent offset with a confident filter is more likely multipath than drift.
+
+**Measured, that guard would have cost 130 m to save 1.2 m**, because it suppresses the
+rescue along with the trap. Not added. The pass criterion is now the OUTCOME rather than
+the re-anchor count, since counting fires punishes the behaviour that rescues it.
+
+The re-anchor count stays as a REPORTED metric so a jumpiness regression cannot become
+invisible, and the real controller-facing cost, the size of the position jump, is
+measured on NCLT rather than assumed away. If the jumps are large the A/B to run is a
+soft re-anchor: inflate `P_pos` and yaw `P` and let the normal update pull the state in
+over a few fixes, instead of setting the state directly.
