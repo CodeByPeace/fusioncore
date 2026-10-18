@@ -205,6 +205,30 @@ struct UKFParams {
   // scalar part of the error, which is ~0 by construction, so its variance is
   // floored to keep P invertible. That is the pragmatic form of USQUE
   // (Crassidis & Markley 2003) rather than a full reduction to 22 dimensions.
+  // Treat every q_* above as a continuous-time spectral density in units per
+  // SECOND, multiplied by dt at each predict, instead of a fixed amount injected
+  // per STEP.
+  //
+  // Why this is a defect and not a preference. Q is currently added once per
+  // predict and never scaled by dt, so the uncertainty injected per second is
+  // q * rate. At the 100 Hz NCLT IMU rate, q_angular_vel = 0.1 injects 10
+  // (rad/s)^2 every second against a gyro whose own variance is 9e-6. Measured
+  // steady state for a random-walk state corrected every step is sqrt(q*R):
+  // sqrt(0.1 * 9e-6) = 9.5e-4 predicted against 1.089873e-03 measured, within 15%,
+  // so the per-step treatment fully accounts for the floor on var(WZ). That floor
+  // integrates into the 20 to 30 degrees of yaw sigma seen across NCLT.
+  //
+  // It also makes the filter depend on MESSAGE RATE rather than on time. Two runs
+  // over the same data that happen to deliver a different number of messages get a
+  // different amount of process noise, which is a candidate explanation for the
+  // 14.80% run-to-run spread measured through the live node against 0.02% for the
+  // control on identical input.
+  //
+  // Default false so existing tuning is untouched byte for byte. When true, the
+  // q_* values are reinterpreted as per-second densities, so a value tuned for
+  // 100 Hz needs dividing by about 100 to mean the same thing.
+  bool q_time_scaled = false;
+
   bool tangent_space_attitude = false;
 
   // Process noise: how much we trust the motion model
@@ -215,7 +239,7 @@ struct UKFParams {
   // Set to a very small value; large values corrupt the quaternion norm.
   double q_orientation  = 1e-9;   // quaternion regularization (dimensionless)
   double q_velocity     = 0.1;    // (m/s)²/step
-  double q_angular_vel  = 0.1;    // (rad/s)²/step
+  double q_angular_vel  = 0.1;    // (rad/s)²/step  (see q_time_scaled)
   double q_acceleration = 1.0;    // (m/s²)²/step
   double q_gyro_bias         = 1e-5;   // (rad/s)²/step -- biases change slowly
   double q_accel_bias        = 1e-5;   // (m/s²)²/step

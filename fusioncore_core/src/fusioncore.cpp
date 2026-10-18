@@ -87,7 +87,8 @@ void FusionCore::adapt_R(
   const Eigen::Matrix<double, z_dim, z_dim>& R_floor,
   InnovationWindow<z_dim>& window,
   const Eigen::Matrix<double, z_dim, 1>& innovation,
-  bool enabled)
+  bool enabled,
+  const Eigen::Matrix<double, z_dim, z_dim>* hph)
 {
   window.push(innovation);
 
@@ -95,6 +96,14 @@ void FusionCore::adapt_R(
 
   // Estimate actual noise covariance from innovation window
   auto C_hat = window.estimate_covariance();
+
+  // The innovation covariance is H*P*H' + R, so the window on its own is NOT an
+  // estimate of R. Assigning it straight in double counts the filter's own
+  // uncertainty and makes a large P inflate R, which widens the gate, which keeps
+  // P large. Subtract the filter's share when the caller can supply it.
+  if (config_.adaptive_subtract_hph && hph != nullptr) {
+    C_hat -= *hph;
+  }
 
   // Slow exponential moving average toward estimated value
   // R_(k+1) = (1 - alpha) * R_k + alpha * C_hat
@@ -106,6 +115,16 @@ void FusionCore::adapt_R(
   // causing K[position, accel] to explode and Z to drift at m/s rates.
   for (int i = 0; i < z_dim; ++i) {
     if (R(i,i) < R_floor(i,i)) R(i,i) = R_floor(i,i);
+  }
+
+  // Ceiling. Without one this is bounded below and unbounded above, so a wrong
+  // filter grows its own R until the gate stops protecting it. Measured at 1723x
+  // nominal on NCLT 2013-04-05. See FusionCoreConfig::adaptive_r_max_scale.
+  if (config_.adaptive_r_max_scale > 0.0) {
+    for (int i = 0; i < z_dim; ++i) {
+      const double ceil_i = R_floor(i,i) * config_.adaptive_r_max_scale;
+      if (R(i,i) > ceil_i) R(i,i) = ceil_i;
+    }
   }
 }
 

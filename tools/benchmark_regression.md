@@ -829,3 +829,80 @@ sets a floor on `var(WZ)` regardless.
 The stop rule says: if Phase 1 or 2 finds a large noise bug, fix it and rerun Phase 3
 before building anything in Phase 5. **Two large noise bugs were found.** The architecture
 work (IMU as input, USQUE) is now explicitly not the next thing to build.
+
+---
+
+## 2026-10-18, PHASE 1 CONCLUDED: two real defects found and fixed, NEITHER causes the losses
+
+Both fixes are implemented behind flags that default off, so the shipped path is byte
+identical. 395 tests pass.
+
+### What was confirmed
+
+`var(WZ + B_GZ) / R_gz = 1.0` with adaptation off: 8.912238e-06 against a configured
+9.000e-06. **The gyro is fused correctly and the measurement model maps WZ properly.**
+No axis, frame or units bug. The third Phase 1 outcome is ruled out.
+
+### Defect 1: `adapt_R` is unbounded above and double counts H*P*H'
+
+Real and measured at **1723x** nominal. Two separate faults in one function: no ceiling,
+and `estimate_covariance()` returns `E[nu*nu'] = H*P*H' + R` which is assigned straight
+into R, so the filter's own uncertainty is counted as sensor noise. Both now fixable via
+`adaptive_r_max_scale` and `adaptive_subtract_hph`.
+
+**But it is not what loses the NCLT sequences.** Turning IMU adaptation off entirely:
+
+```
+  sequence      baseline RMSE   imu_adapt_OFF RMSE   median base   median off
+  2013-04-05          16.677               16.793         6.960        6.971
+  2012-08-20         171.393              174.558        35.436       35.628
+  2012-06-15          78.139               78.882        29.978       29.659
+```
+
+Under 2% on all three, and slightly worse on two. **The encoder picks up the yaw-rate
+slack**, so starving the gyro update of weight costs almost nothing here.
+
+**A global R ceiling is actively harmful.** Setting `adaptive_r_max_scale = 10` across
+all sensors sent 2012-08-20 to **16318370.904 m**. GNSS genuinely needs adaptation
+headroom, because NCLT fixes really are far worse than their declared covariance, which
+is the separate open defect filed above. The ceiling must be per sensor: tight on the
+IMU, loose on GNSS.
+
+### Defect 2: Q is per step and never scaled by dt
+
+Real, documented in `ukf.hpp` as `(rad/s)^2/step`, and confirmed numerically: the
+predicted steady state `sqrt(q*R)` is sqrt(0.1 * 9e-6) = 9.5e-4 against a measured
+1.089873e-03, within 15%. Now fixable via `ukf.q_time_scaled`.
+
+**At an equivalent q it is behaviour preserving**, which is what a correctness fix should
+look like: 2013-04-05 goes 16.677 to 16.964 RMSE, 6.960 to 7.005 median. Larger q makes
+it worse (24.398 at 3x, 27.674 at 10x).
+
+**The rate-invariance test is INCONCLUSIVE, and not in the predicted direction.**
+Decimating the IMU from 100 Hz to 50 Hz:
+
+```
+  arm            rate      RMSE     median   path_ratio
+  per-step      100Hz    16.677      6.960        1.019
+  per-step       50Hz    16.679      7.094        1.027
+  dt-scaled     100Hz    16.964      7.005        0.984
+  dt-scaled      50Hz    14.392      6.804        0.989
+```
+
+**Per-step is already rate invariant here, 16.677 against 16.679.** The prediction was
+that it would not be. Two reasons it is a weak test on this data: the encoder runs at
+roughly twice the IMU rate and drives most predicts, so halving the IMU removes only
+about 13% of predict calls; and the 15% movement in the dt-scaled arm is comparable to
+the healthy-band variation already documented on this sequence. A fair rate-invariance
+test needs the encoder decimated too, and n greater than 1.
+
+### Conclusion, and it matters for what happens next
+
+**Two genuine correctness defects were found, and neither explains why FusionCore loses
+on NCLT.** They are worth fixing because a filter that lets a wrong estimate inflate its
+own sensor noise, and one whose behaviour depends on message rate rather than elapsed
+time, are both wrong regardless of what they cost on a benchmark.
+
+The stop rule said a large noise bug would mean the architecture work is not needed.
+**Two were found and the architecture question is back open**, because neither moved the
+result. That is the opposite of the hoped-for outcome and it is the honest one.

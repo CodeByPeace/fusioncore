@@ -309,7 +309,10 @@ void UKF::predict(double dt) {
   // Scaling by dt here would require re-tuning all Q values by the IMU rate (~100x),
   // which would break all existing configurations and cause GPS Mahalanobis rejections
   // as P grows too slowly to track real motion.
-  StateMatrix P_pred = Q_;
+  // Q is a per-step amount by default, or a per-second density scaled by dt when
+  // q_time_scaled is set. See UKFParams::q_time_scaled for why the default is wrong
+  // and why it is still the default.
+  StateMatrix P_pred = params_.q_time_scaled ? (Q_ * dt).eval() : Q_;
   if (pos_noise_scale_ != 1.0) {
     P_pred(X, X) *= pos_noise_scale_;
     P_pred(Y, Y) *= pos_noise_scale_;

@@ -277,6 +277,36 @@ struct FusionCoreConfig {
   // Learning rate: how fast R adapts to estimated noise (0.0 = off, 0.1 = fast)
   double adaptive_alpha = 0.01;
 
+  // Hard ceiling on an adapted R, as a multiple of the configured nominal. 0 means
+  // unbounded, which is the current behaviour and the default so nothing moves.
+  //
+  // adapt_R moves R toward the measured innovation covariance and clamps it only
+  // from BELOW. That is a positive feedback loop: a wrong filter produces large
+  // innovations, R grows toward them, the update carries less weight AND the
+  // chi-squared gate widens because it normalises by S = H*P*H' + R, so the filter
+  // gets wronger. Measured on NCLT 2013-04-05 with the shipped config, the gyro R
+  // reached 1723x its configured value: var(WZ + B_GZ) of 1.551077e-02 against a
+  // configured 9.000e-06. With adaptation off the same quantity is 8.912238e-06,
+  // a ratio of 1.0 to nominal, which is what confirms the gyro is otherwise fused
+  // correctly.
+  //
+  // A wrong filter should not be able to manufacture its own permission to stay
+  // wrong. 10.0 is a reasonable setting: it still lets adaptation absorb a sensor
+  // that is genuinely several times noisier than specified.
+  double adaptive_r_max_scale = 0.0;
+
+  // Subtract the filter's own contribution before treating the innovation window
+  // as an estimate of R.
+  //
+  // The innovation covariance is E[nu*nu'] = H*P*H' + R, so assigning the measured
+  // window covariance straight into R double counts H*P*H'. That is a SECOND
+  // feedback path with the same shape as the missing ceiling: a large P inflates
+  // the innovations, which inflates R, which widens the gate. The textbook estimate
+  // is C_hat - H*P*H', floored at the nominal.
+  //
+  // Default false so the existing behaviour is byte identical.
+  bool adaptive_subtract_hph = false;
+
   // Max delay to compensate for (seconds). GNSS is typically 100-300ms late.
   double max_measurement_delay = 0.5;
 
@@ -1386,12 +1416,16 @@ private:
   void init_adaptive_R();
 
   template <int z_dim>
+  // hph is the filter's own contribution H*P*H' to the innovation covariance.
+  // Pass a zero matrix when it is not available; the subtraction is then a no-op
+  // and only the ceiling applies.
   void adapt_R(
     Eigen::Matrix<double, z_dim, z_dim>& R,
     const Eigen::Matrix<double, z_dim, z_dim>& R_floor,
     InnovationWindow<z_dim>& window,
     const Eigen::Matrix<double, z_dim, 1>& innovation,
-    bool enabled
+    bool enabled,
+    const Eigen::Matrix<double, z_dim, z_dim>* hph = nullptr
   );
 
   // ─── State snapshot for delay compensation

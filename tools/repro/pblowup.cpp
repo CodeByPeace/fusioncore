@@ -40,6 +40,8 @@ int main(int argc, char** argv) {
   const bool tangent = argc > 5 ? std::atoi(argv[5]) != 0 : true;
   const bool freeze  = argc > 6 ? std::atoi(argv[6]) != 0 : false;
   const bool adapt   = argc > 7 ? std::atoi(argv[7]) != 0 : true;
+  const bool qscale  = argc > 8 ? std::atoi(argv[8]) != 0 : false;
+  const double rceil = argc > 9 ? std::atof(argv[9]) : 0.0;
 
   FusionCoreConfig cfg;
   cfg.imu.gyro_noise_x=cfg.imu.gyro_noise_y=cfg.imu.gyro_noise_z=0.003;  // NCLT config
@@ -54,6 +56,9 @@ int main(int argc, char** argv) {
                 cfg.ukf.q_gyro_bias=0;    cfg.ukf.q_encoder_wz_bias=0; }
   cfg.ukf.q_orientation=1e-9;
   cfg.ukf.q_angular_vel=q;
+  cfg.ukf.q_time_scaled=qscale;
+  cfg.adaptive_r_max_scale=rceil;
+  cfg.adaptive_subtract_hph=(rceil>0.0);
 
   FusionCore fc(cfg);
   State s_init;
@@ -64,8 +69,8 @@ int main(int argc, char** argv) {
   std::ifstream in(path);
   std::string line;
   std::printf("# q_angular_vel=%g window %.0f..%.0f s\n", q, tlo, thi);
-  std::printf("# tangent=%d freeze=%d adaptive=%d  configured R_gz = %.3e rad^2/s^2\n",
-              (int)tangent, (int)freeze, (int)adapt,
+  std::printf("# tangent=%d freeze=%d adaptive=%d qscale=%d rceil=%.1f  R_gz=%.3e rad^2/s^2\n",
+              (int)tangent, (int)freeze, (int)adapt, (int)qscale, rceil,
               cfg.imu.gyro_noise_z*cfg.imu.gyro_noise_z);
   std::printf("# %9s %10s %12s %12s %12s %9s %12s\n",
               "t_rel","yaw_sig","var_WZ","var_BGZ","var_SUM","r_wb","sum/wz");
