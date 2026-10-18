@@ -26,6 +26,7 @@ int main(int argc, char** argv) {
   const double TURN  = argc > 3 ? atof(argv[3]) : 0.0;   // rad/s amplitude, 0 = straight
   const bool   TANGENT = argc > 4 ? atoi(argv[4]) != 0 : false;  // tangent-space quaternion mean
   const double QORI  = argc > 5 ? atof(argv[5]) : -1.0;  // attitude process noise override
+  const bool   FREEZE = argc > 6 ? atoi(argv[6]) != 0 : false;  // platform.profile ground_robot freeze
 
   FusionCoreConfig cfg;
   cfg.imu.gyro_noise_x = cfg.imu.gyro_noise_y = cfg.imu.gyro_noise_z = 0.005;
@@ -39,17 +40,27 @@ int main(int argc, char** argv) {
   cfg.ukf.tangent_space_quaternion_mean = TANGENT;
   cfg.ukf.tangent_space_attitude = TANGENT;
   if (QORI > 0.0) cfg.ukf.q_orientation = QORI;
+  if (FREEZE) {
+    // exactly what platform.profile ground_robot sets
+    cfg.ukf.q_acceleration = 0.0; cfg.ukf.q_accel_bias = 0.0;
+    cfg.ukf.q_gyro_bias = 0.0; cfg.ukf.q_encoder_wz_bias = 0.0;
+  }
 
   FusionCore fc(cfg);
   State s0;
+  if (FREEZE) {
+    s0.P(B_GX,B_GX)=1e-12; s0.P(B_GY,B_GY)=1e-12; s0.P(B_GZ,B_GZ)=1e-12;
+    s0.P(B_AX,B_AX)=1e-12; s0.P(B_AY,B_AY)=1e-12; s0.P(B_AZ,B_AZ)=1e-12;
+    s0.P(B_EWZ,B_EWZ)=1e-12;
+  }
   s0.x[QW] = std::cos(YAW0/2.0);
   s0.x[QZ] = std::sin(YAW0/2.0);          // the planted heading error
   fc.init(s0, 0.0);
 
   printf("\n  truth: straight along +x at %.1f m/s. filter starts %.1f deg off.\n", SPEED, YAW0*180/M_PI);
   printf("  GNSS position at 1 Hz, no heading source. tangent_mean=%d\n\n", (int)TANGENT);
-  printf("  %7s %10s %10s %12s %12s %10s\n",
-         "t", "yaw_deg", "err_deg", "var(QZ)", "P(Y,QZ)", "pos_err");
+  printf("  %7s %10s %10s %12s %12s %10s %11s\n",
+         "t", "yaw_deg", "err_deg", "var(QZ)", "P(Y,QZ)", "pos_err", "B_GZ");
 
   int n_gnss = 0, n_rej = 0;
   double tx = 0.0, ty = 0.0, tyaw = 0.0;
@@ -71,9 +82,9 @@ int main(int argc, char** argv) {
     if (k % 1000 == 0 || k == 100) {
       const State& s = fc.get_state();
       double y = yaw_of(s);
-      printf("  %7.1f %10.3f %10.3f %12.5f %12.6f %10.3f\n",
+      printf("  %7.1f %10.3f %10.3f %12.5f %12.6f %10.3f %11.6f\n",
              t, y*180/M_PI, std::atan2(std::sin(y-tyaw),std::cos(y-tyaw))*180/M_PI,
-             s.P(QZ,QZ), s.P(Y,QZ), std::hypot(s.x[X]-tx, s.x[Y]-ty));
+             s.P(QZ,QZ), s.P(Y,QZ), std::hypot(s.x[X]-tx, s.x[Y]-ty), s.x[B_GZ]);
     }
   }
   printf("\n  GNSS fixes %d, rejected %d\n", n_gnss, n_rej);
