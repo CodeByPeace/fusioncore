@@ -1753,3 +1753,83 @@ without, across a 380 m position jump.
 The shipping numbers do not move: 2012-02-04 59.689, 2012-06-15 78.139, 2012-08-20
 46.671, 2012-09-28 10.008, 2013-04-05 16.011. Four are bit-identical to the
 pre-removal runs and the fifth matches to three decimals.
+
+## 2026-10-19  Heading truth on NCLT after all, from positions
+
+NCLT's ground-truth ORIENTATION is identity and unusable. Its POSITIONS are real, and
+a Segway does not slide sideways, so course over ground is heading wherever the robot
+is moving and not turning hard. `tools/truth_heading.py` builds that series with four
+guards: a chord of at least 3 m of travel rather than adjacent samples, at least
+0.5 m/s over the chord, under 10 degrees of turn across it, and a rejection of chords
+implying over 3 m/s, which NCLT needs because a known ~12% of its samples imply over
+5 m/s on a 1.5 m/s robot.
+
+Coverage is better than expected:
+
+    sequence      GT rows   heading samples   % of rows   % of run spanned
+    2012-08-20      11174              7097       63.5%               99%
+    2012-06-15       8197              4846       59.1%               99%
+
+**The validation is what makes it usable.** The series is cross-checked against IMUQ,
+the IMU's own absolute attitude, which is an INDEPENDENT source. They fit one constant
+offset:
+
+    2012-08-20   offset 97.33 deg,  scatter 5.19 deg median, 12.05 deg p90
+    2012-06-15   offset 96.47 deg,  scatter 4.96 deg median, 12.90 deg p90
+
+Two sequences, recorded months apart, agree on that constant to within 0.9 degrees,
+and it is approximately the 90 degree NED-against-ENU convention difference. A
+course-over-ground series that was mostly noise would not fit one constant across 7097
+samples. So heading is now measurable here to a few degrees, and the standing claim
+that "no heading claim can be made on NCLT" was too strong: it is true of the
+quaternions, not of the dataset.
+
+### The yaw reset, decided on evidence instead of its absence
+
+The reset was removed on the grounds that nothing showed it helping. With heading truth
+it can be asked properly. First, what actually differed, because my own description of
+it was loose in both directions:
+
+- The largest COMPONENT-wise quaternion difference is 0.9340 at t=1345508586.897. I
+  called that "a large rotation" without computing the rotation. It is one: the actual
+  angle between those two attitudes, double cover handled, is **120.45 deg**, and the
+  largest anywhere in the run is 121.94 deg. So the loose quote happened to be right,
+  but it was not a measurement when I wrote it.
+- It is a YAW difference, up to **120.54 deg**, with roll and pitch moving 16.40 and
+  29.92 deg.
+- It is not persistent. 10509 of 790269 samples differ in yaw by over 1 degree, 1.33%,
+  in **four episodes** of 29.5, 17.8, 29.0 and 1.9 s inside a 322 s span.
+
+Scored against heading truth, whole run and from the divergence onward, the two arms
+are indistinguishable:
+
+    yaw reset ON  (whole run)   n=7097  median 9.01 deg  p90 34.90  RMS 30.78
+    yaw reset OFF (whole run)   n=7097  median 9.01 deg  p90 34.90  RMS 30.78
+    yaw reset ON  (after onset) n= 542  median 5.69 deg  p90 21.63  RMS 17.87
+    yaw reset OFF (after onset) n= 542  median 5.69 deg  p90 21.67  RMS 17.90
+
+That is because the episodes sit almost entirely where heading truth is missing, which
+is the same place everything else on this dataset goes missing: 8 truth samples in the
+first episode, 3 in the second, **0 in the third and fourth**. Eleven scorable samples
+out of 78 seconds of disagreement.
+
+On those eleven, with the convention offset fitted over the whole run so the episodes
+cannot set it:
+
+    mean heading error   ON 18.78 deg,  OFF 18.23 deg
+    per-sample           ON closer on 3,  OFF closer on 8
+
+**So the reset made heading slightly worse where it mattered, and removing it was the
+right call.** State it at the strength the data supports and no higher: 0.55 degrees of
+mean difference across eleven samples, against a heading truth whose own scatter is
+5.19 degrees median. The direction is consistent and it is not evidence of a real
+effect. What it does do is move the decision off "absence of evidence", which is where
+it stood this morning.
+
+### Consequence
+
+Heading is now a scorable quantity on NCLT wherever the robot was moving, which makes
+two previously unanswerable things answerable: whether a heading source helps, and
+whether the coast's drift is a heading problem or a speed problem. It does NOT help
+inside the blackouts, because that is exactly where truth is absent. The 18% gap
+coverage figure stands unchanged.

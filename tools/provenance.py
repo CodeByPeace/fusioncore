@@ -13,6 +13,7 @@ number from somewhere else:
   5. P_angvel = 0.2417             a 3-axis TRACE labelled as one variance
   6. "185.195 vs 9.193, 20x"       two pipelines, two configs, two scoring points
   7. "GNSS 9.046 vs FC 78.139"     fix-times GNSS against full-trajectory FusionCore
+  8. "bit-identical on all five"   RMSE equal to 3 dp read as the STATE being equal
 
 A raw-numbers rule does not catch any of these, because the numbers were raw and
 correct. What was missing was the tag saying what each one measured.
@@ -26,13 +27,28 @@ USAGE
           points="full_traj", coverage=1.00, name="FC 2012-06-15 RMSE")
     a.ratio(b)        # raises: scoring points differ, fix_times vs full_traj
 
-Four fields, all required, because every one of the seven failures above is a
+Four fields, all required, because every one of the first seven failures above is a
 mismatch in exactly one of them:
 
     pipeline   node | replay            which code path produced it
     config     a short name             which settings were in force
     points     full_traj | fix_times | gaps | window
     coverage   0.0 to 1.0               fraction of the sequence actually covered
+
+EQUALITY IS ITS OWN CLAIM, which is failure 8 and the reason `same_as` exists. On
+2026-10-19 the yaw reset was reported as changing nothing, "bit-identical trajectories
+on all five sequences". What had been measured was position RMSE agreeing to three
+decimals. Four of the five were in fact byte-identical and the fifth was not: on
+2012-08-20 the state diverged by 0.798 m in position and 0.934 in a quaternion
+component while the RMSE landed on 46.671 either way. A metric tying is weaker than a
+state matching, and the stronger word was used.
+
+So `same_as` makes the strength explicit and refuses to let a metric comparison be
+reported as state equality:
+
+    a.same_as(b, how="metric", decimals=3)   # the RMSEs agree to 3 dp
+    a.same_as(b, how="bytes")                # the trajectories are byte-identical
+                                             # and only a byte comparison may say so
 
 Coverage exists because of failure 7's cause: a log exported from a benchmark run
 that had been stopped partway through covered 66% of its sequence and was used as if
@@ -66,6 +82,37 @@ class M:
                 f"{self.name}: pipeline={self.pipeline!r} is not one of {self._PIPELINES}")
         if not 0.0 <= self.coverage <= 1.0:
             raise ProvenanceError(f"{self.name}: coverage={self.coverage} is not a fraction")
+
+    def same_as(self, other, how, decimals=3, bytes_equal=None):
+        """Is this the same as `other`, and say in WHICH sense.
+
+        how="metric"  the two VALUES agree to `decimals`. Says nothing about the
+                      state behind them: two different trajectories routinely score
+                      the same RMSE.
+        how="bytes"   the two artefacts are byte-identical. Only a real byte or
+                      element-wise comparison may claim this, so the caller has to
+                      pass its result in as `bytes_equal`; this class never sees the
+                      trajectories and must not be allowed to infer it.
+
+        Returns a sentence suitable for pasting into a commit message, so the claim
+        and its strength travel together.
+        """
+        if how not in ("metric", "bytes"):
+            raise ProvenanceError(f"how={how!r} must be 'metric' or 'bytes'")
+        self.check_comparable(other)
+        if how == "bytes":
+            if bytes_equal is None:
+                raise ProvenanceError(
+                    "how='bytes' needs bytes_equal from an actual byte comparison: "
+                    "equal metrics do NOT establish equal state, which is how "
+                    "'bit-identical on all five' got published on 2026-10-18")
+            return ("byte-identical" if bytes_equal else
+                    "DIFFERENT in state (metrics may still agree)")
+        same = round(self.value, decimals) == round(other.value, decimals)
+        return (f"identical to {decimals} dp in this metric only "
+                f"({self.value:.{decimals}f}); state not compared" if same else
+                f"differs in this metric ({self.value:.{decimals}f} vs "
+                f"{other.value:.{decimals}f})")
 
     def tag(self):
         return f"{self.pipeline}/{self.config}/{self.points}/{self.coverage:.0%}"

@@ -278,4 +278,5 @@ def _integrate(gyro, t0, t1, yaw0):
     return out
 
 
-main()
+if __name__ == "__main__":
+    main()
