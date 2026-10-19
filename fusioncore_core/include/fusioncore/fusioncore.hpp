@@ -689,6 +689,22 @@ struct FusionCoreConfig {
   // filter the same way, which random noise does not do. Trigger when the mean
   // offset over the window exceeds this many metres and is consistent in
   // direction.
+  // The persistent-bias trigger, branch C. DEFAULT OFF, and that is a measured
+  // decision rather than caution. Ablated on NCLT 2026-10-18: with it on, 5 of 5
+  // sequences improve over baseline but three are WORSE than with it off, and the
+  // reject-rate trigger alone fires about half as often and lands better:
+  //
+  //   sequence     baseline   both triggers   rate trigger only
+  //   2012-02-04    142.792     61.357 (14)      59.689  (7)
+  //   2012-06-15     78.139     78.109  (1)      78.139  (0)
+  //   2012-08-20    171.393     60.674  (6)      46.671  (4)
+  //   2012-09-28     23.638     13.750  (4)      10.008  (2)
+  //   2013-04-05     16.677     16.005  (5)      16.011  (3)
+  //
+  // The extra events the bias trigger adds are net harmful, by 23% on 2012-08-20
+  // and 27% on 2012-09-28. What it buys is 0.04% on the two sequences where it
+  // wins. Fewer re-anchors is better. See tools/benchmark_regression.md 2026-10-18.
+  bool   gnss_reanchor_bias_trigger = false;
   double gnss_reanchor_bias_m = 8.0;
   // How many recent fixes must agree. Fewer than 3 cannot establish a track.
   int    gnss_reanchor_buffer_n = 5;
@@ -1096,6 +1112,17 @@ struct FusionCoreStatus {
   // confirm it from a bag. A recovery that silently never runs looks exactly like one
   // that runs and does not help.
   long   gnss_recovery_inflations = 0;
+  // Re-anchor events, so a nav stack can tell a corrected pose from a diverged one.
+  // A re-anchor is a deliberate position discontinuity: on NCLT 2012-08-20 one moved
+  // the estimate 787 m and took the error from 798 m to 16.8 m. A consumer that cannot
+  // see it happen has to treat it as divergence and chase it, which is the opposite of
+  // what it should do. jump_m is the distance the state moved, and yaw_reset says
+  // whether heading was reset too, because a heading jump invalidates a plan that a
+  // position jump alone does not.
+  long   gnss_reanchors = 0;
+  double gnss_reanchor_last_t = 0.0;
+  double gnss_reanchor_last_jump_m = 0.0;
+  bool   gnss_reanchor_last_yaw_reset = false;
   // #151: the two flags that decide whether recovery can run at all.
   bool   gnss_reject_after_gap = false;
   int    gnss_consecutive_rejects_now = 0;
@@ -1479,6 +1506,8 @@ private:
   double reanchor_last_t_ = -1e18;
   std::deque<bool> reanchor_recent_;   // true = rejected, most recent at the back
   long   reanchor_count_  = 0;
+  double reanchor_last_jump_ = 0.0;
+  bool   reanchor_last_yaw_reset_ = false;
   bool   maybe_reanchor(double timestamp_seconds);
   int  gnss_consecutive_accepts_  = 0;
   // Recovery mode: after a timeout-triggered coast, accept the first returning

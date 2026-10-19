@@ -468,6 +468,24 @@ public:
     // rate, which is what #126 is about. 0 clears the latch on the first fix.
     declare_parameter("gnss.reacquire_confirm_fixes", 3);
     declare_parameter("gnss.p_inflate_sigma",       50.0);
+    // Re-anchoring after a blackout. DEFAULT OFF, so no existing deployment
+    // changes behaviour by upgrading. Measured on NCLT 2026-10-18: enabling it
+    // takes 2012-08-20 from 171.393 to 46.671 and 2012-02-04 from 142.792 to
+    // 59.689, with no sequence regressing on RMSE. These were replay-only until
+    // now, which meant the fix existed and no deployment could reach it.
+    declare_parameter("gnss.reanchor_enabled",       false);
+    declare_parameter("gnss.reanchor_window",        20);
+    declare_parameter("gnss.reanchor_reject_frac",   0.6);
+    // The persistent-bias trigger. Off because the ablation says the events it
+    // adds are net harmful: see the table in fusioncore.hpp next to this field.
+    declare_parameter("gnss.reanchor_bias_trigger",  false);
+    declare_parameter("gnss.reanchor_bias_m",        8.0);
+    declare_parameter("gnss.reanchor_buffer_n",      5);
+    declare_parameter("gnss.reanchor_odom_tol_m",    4.0);
+    declare_parameter("gnss.reanchor_min_speed",     0.7);
+    declare_parameter("gnss.reanchor_sigma_xy",      5.0);
+    declare_parameter("gnss.reanchor_sigma_yaw",     0.35);
+    declare_parameter("gnss.reanchor_cooldown_s",    20.0);
     declare_parameter("gnss.recovery_timeout_s",    0.0);
     // How far the robot must travel before heading is declared observable and
     // heading_validated flips true. This was hardcoded at 5.0 and unreachable
@@ -930,6 +948,22 @@ public:
     config.vslam.orientation_noise = get_parameter("vslam.orientation_noise").as_double();
     vslam_reinit_n_       = get_parameter("vslam.reinit_n").as_int();
 
+    config.gnss_reanchor_enabled      = get_parameter("gnss.reanchor_enabled").as_bool();
+    config.gnss_reanchor_window       = get_parameter("gnss.reanchor_window").as_int();
+    config.gnss_reanchor_reject_frac  =
+      get_parameter("gnss.reanchor_reject_frac").as_double();
+    config.gnss_reanchor_bias_trigger =
+      get_parameter("gnss.reanchor_bias_trigger").as_bool();
+    config.gnss_reanchor_bias_m       = get_parameter("gnss.reanchor_bias_m").as_double();
+    config.gnss_reanchor_buffer_n     = get_parameter("gnss.reanchor_buffer_n").as_int();
+    config.gnss_reanchor_odom_tol_m   =
+      get_parameter("gnss.reanchor_odom_tol_m").as_double();
+    config.gnss_reanchor_min_speed    =
+      get_parameter("gnss.reanchor_min_speed").as_double();
+    config.gnss_reanchor_sigma_xy     = get_parameter("gnss.reanchor_sigma_xy").as_double();
+    config.gnss_reanchor_sigma_yaw    = get_parameter("gnss.reanchor_sigma_yaw").as_double();
+    config.gnss_reanchor_cooldown_s   =
+      get_parameter("gnss.reanchor_cooldown_s").as_double();
     config.gnss_coast_n               = get_parameter("gnss.coast_n").as_int();
     config.gnss_coast_min_gap_s       = get_parameter("gnss.coast_min_gap_s").as_double();
     config.gnss_coast_q_factor        = get_parameter("gnss.coast_q_factor").as_double();
@@ -3616,11 +3650,29 @@ private:
       msg.heading_vs_track_n   = st_now.heading_vs_track_n;
       msg.continuity_limit_m   = st_now.continuity_limit_m;
       msg.continuity_learned   = st_now.continuity_learned;
+      // reanchored is an EDGE, true on exactly the fix that re-anchored, so a
+      // consumer can act on the event instead of polling a counter and guessing
+      // when it moved.
+      msg.reanchor_count     = static_cast<int32_t>(st_now.gnss_reanchors);
+      msg.reanchored         = st_now.gnss_reanchors > last_reanchor_count_;
+      msg.reanchor_jump_m    = st_now.gnss_reanchor_last_jump_m;
+      msg.reanchor_yaw_reset = st_now.gnss_reanchor_last_yaw_reset;
+      if (msg.reanchored) {
+        RCLCPP_WARN(get_logger(),
+          "GNSS re-anchor: position jumped %.2f m%s. This is a deliberate "
+          "discontinuity, not divergence. Re-anchor %d this run.",
+          msg.reanchor_jump_m,
+          msg.reanchor_yaw_reset ? " and heading was reset" : "",
+          msg.reanchor_count);
+      }
+      last_reanchor_count_ = st_now.gnss_reanchors;
     }
     msg.track_heading_sigma_rad   = d.track_heading_sigma_rad;
 
     gnss_status_pub_->publish(msg);
   }
+
+  long last_reanchor_count_ = 0;
 
   // Extracts heading 1-sigma in degrees from the filter covariance via quaternion Jacobian.
   bool heading_announced_ = false;
@@ -3901,7 +3953,11 @@ private:
       {{"outlier_count",        std::to_string(status.gnss_outliers)},
        {"heading_outliers",     std::to_string(status.hdg_outliers)},
        {"heading_last_reason",  heading_reason_str(status.heading_reason)},
-       {"heading_last_chi2",    std::to_string(status.heading_chi2)}}));
+       {"heading_last_chi2",    std::to_string(status.heading_chi2)},
+       {"reanchors",            std::to_string(status.gnss_reanchors)},
+       {"reanchor_last_jump_m", std::to_string(status.gnss_reanchor_last_jump_m)},
+       {"reanchor_last_yaw_reset",
+          status.gnss_reanchor_last_yaw_reset ? "true" : "false"}}));
 
     // VSLAM (only shown when configured)
     if (!vslam_topic_.empty()) {

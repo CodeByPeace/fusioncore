@@ -1566,3 +1566,107 @@ error shares in the window table above rest on the same partial coverage: 2012-0
 "84.6% of error in the gap" is measured across 60% of that gap, and 2013-04-05's
 60-65% across 14% of its gaps. Those shares stand as written, because error can only
 be scored where truth exists, but they are not a claim about the uncovered 82%.
+
+## 2026-10-18, LATER: the bias trigger is net harmful, and the heading reset is inert
+
+**This supersedes the labelling in the 2026-10-18 arm table above.** When that table was
+measured, `gnss.reanchor_enabled=1` switched on BOTH triggers, so everything recorded
+there as "arm A" is really A+C. The numbers stand for what they measured. The label does
+not, and the default has since changed.
+
+First, a correction to a caveat I attached to that table. I wrote that it was a single
+run per arm against a measured 14.80% run-to-run spread. **That spread belongs to the
+node, not to replay.** Replay is deterministic: three runs of the same arm on 2012-02-04
+produced byte-identical trajectories, md5 `c1df7968f555f8cbd521243f90851e4a`, one of them
+the published run itself. Every replay number in this file is noise-free, and the two
+flat sequences are genuinely flat rather than lost in spread.
+
+### The ablation
+
+Isolating each trigger by pushing the other's threshold out of reach, five sequences,
+RMSE and re-anchor event count:
+
+    sequence     baseline        both      rate only      bias only
+    2012-02-04    142.792   61.357/14    59.689/ 7      61.357/13
+    2012-06-15     78.139   78.109/ 1    78.139/ 0      78.109/ 1
+    2012-08-20    171.393   60.674/ 6    46.671/ 4      60.674/ 6
+    2012-09-28     23.638   13.750/ 4    10.008/ 2      13.750/ 4
+    2013-04-05     16.677   16.005/ 5    16.011/ 3      16.005/ 5
+
+The rate trigger alone fires about half as often and lands better on three of five, by
+23% on 2012-08-20 and 27% on 2012-09-28. What the bias trigger buys in exchange is 0.04%
+on the two sequences where it wins, both of which are the sequences where re-anchoring
+cannot help anyway. **Fewer re-anchors is better.** `gnss_reanchor_bias_trigger` now
+exists and defaults to false.
+
+Note the bias-only column reproduces the both-triggers column exactly on all five. Both
+triggers fire in the same situations; the bias one simply fires more. This is not two
+mechanisms, it is one mechanism at two thresholds.
+
+### The heading reset does nothing
+
+    sequence       both   both, no yaw   rate only   rate only, no yaw
+    2012-02-04   61.357        61.308      59.689              59.689
+    2012-06-15   78.109        78.108      78.139              78.139
+    2012-08-20   60.674        61.351      46.671              46.671
+    2012-09-28   13.750        13.748      10.008              10.008
+    2013-04-05   16.005        16.005      16.011              16.011
+
+With the bias trigger off, disabling the yaw reset changes nothing at all: bit-identical
+trajectories on all five. The comment in `maybe_reanchor` claimed position alone does not
+fix 2012-09-28 because the heading it left the gap with is wrong. **That claim is
+withdrawn** and the comment now says so. Disabling the reset moves 2012-09-28 from 13.750
+to 13.748. The reset is kept because resetting a heading the filter has just admitted is
+wrong is the right thing to do and it costs nothing, not because anything measured shows
+it helping.
+
+### The shipping configuration
+
+`gnss.reanchor_enabled=1`, bias trigger off, which is now the default pair:
+
+    sequence     baseline        new   ratio    median  path_ratio  events
+    2012-02-04    142.792     59.689   2.39x    13.665       1.012       7
+    2012-06-15     78.139     78.139   1.00x    29.978       1.113       0
+    2012-08-20    171.393     46.671   3.67x     8.531       0.866       4
+    2012-09-28     23.638     10.008   2.36x     6.565       1.106       2
+    2013-04-05     16.677     16.011   1.04x     6.993       1.016       3
+
+**One thing got worse and it is not the RMSE.** 2012-09-28's path length ratio goes
+1.048 baseline, 1.028 with both triggers, **1.106 with the rate trigger alone**. So the
+configuration with the best RMSE on that sequence has the worst path distortion of the
+three, worse than doing nothing. Two re-anchors buy a 2.36x RMSE improvement and cost
+5.8% of path length. That is the honest trade and it is worth flagging to anyone whose
+consumer integrates the path rather than reading the pose.
+
+Where the error moved, windows pinned to the raw GNSS median as before:
+
+    sequence     arm        | rec %t  rec %e | std %t  std %e | rec RMSE
+    2012-02-04   baseline   |  44.5%   94.5% |  55.5%    5.5% |  215.799
+    2012-02-04   rate only  |  11.5%   94.4% |  88.5%    5.6% |  175.275
+    2012-08-20   baseline   |  22.4%   94.0% |  75.5%    3.2% |  350.265
+    2012-08-20   rate only  |  10.9%   64.7% |  87.0%    3.8% |  114.029
+    2012-09-28   baseline   |   8.8%   85.8% |  91.2%   14.2% |   75.269
+    2012-09-28   rate only  |   6.7%   24.3% |  93.3%   75.5% |   19.312
+    2013-04-05   baseline   |   3.6%   14.5% |  94.6%   25.2% |   33.362
+    2013-04-05   rate only  |   3.7%    7.2% |  94.6%   27.4% |   22.364
+
+2012-09-28 is the clearest: recovery RMSE 75.269 to 19.312 and recovery's share of error
+85.8% to 24.3%, with 75.5% of what remains now in steady coverage. Recovery is no longer
+that sequence's problem. Steady-state accuracy is, and raw GNSS still beats it there.
+
+Safety on the shipping configuration, from replay's own event log: 16 events, **7 better,
+0 worse, 9 unscorable** where truth is sparse. The single harmful event in the
+both-triggers arm is gone. The lowest pre-event error across all scorable events rises
+from 48.22 m to **138.61 m**, so the surviving trigger is the more conservative of the
+two by a wide margin.
+
+### It was unreachable from ROS
+
+None of these parameters were declared in `fusion_node.cpp`. The feature existed, was
+measured, and **no deployment could switch it on**, because replay wires the config
+struct directly. Eleven `gnss.reanchor_*` parameters are now declared and wired, default
+off, verified by launching the node and reading each one back after configure. The node
+also publishes the event: `reanchored`, `reanchor_jump_m`, `reanchor_yaw_reset` and
+`reanchor_count` on `/fusion/debug/gnss_status`, plus a WARN log line and three
+`/diagnostics` fields. A re-anchor is a deliberate discontinuity, and a consumer that
+cannot see it happen has to treat an 787 m correction as divergence and chase it.

@@ -1611,6 +1611,7 @@ bool FusionCore::maybe_reanchor(double timestamp_seconds)
   spread /= reanchor_buf_.size();
   const double bias = std::hypot(mx, my);
   const bool trigger_bias =
+    config_.gnss_reanchor_bias_trigger &&
     bias >= config_.gnss_reanchor_bias_m && bias > spread;
 
   if (!trigger_reject && !trigger_bias) return false;
@@ -1650,20 +1651,34 @@ bool FusionCore::maybe_reanchor(double timestamp_seconds)
   const double dt = last.t - first.t;
   if (dt <= 1e-6) return false;
 
+  const double pre_x = ukf_.state().x[X];
+  const double pre_y = ukf_.state().x[Y];
   ukf_.reanchor_position(last.x, last.y, last.z,
                          config_.gnss_reanchor_sigma_xy,
                          config_.gnss_reanchor_sigma_xy * 2.0);
+  reanchor_last_yaw_reset_ = false;
 
-  // Heading too, when the robot is actually moving. Position alone does not fix
-  // 2012-09-28, where fixes are accepted at a median mahalanobis of 0.526 and the
-  // error persists anyway because the heading it left the gap with is wrong.
+  // Heading too, when the robot is actually moving.
+  //
+  // This comment used to claim that position alone does not fix 2012-09-28, whose
+  // fixes are accepted at a median mahalanobis of 0.526 while the error persists,
+  // and that the heading it left the gap with is why. That claim is WITHDRAWN,
+  // measured 2026-10-18. Disabling this reset changes 2012-09-28 from 13.750 to
+  // 13.748 and the other four sequences by at most 1.1%, and with the bias trigger
+  // off it changes nothing at all on any sequence, bit-identical trajectories. The
+  // reset is close to inert. It is kept because resetting a heading the filter has
+  // just admitted is wrong is the right thing to do and it costs nothing, not
+  // because any measurement shows it helping.
   const double speed = odom_path / dt;
   const double net   = std::hypot(last.x - first.x, last.y - first.y);
   if (speed >= config_.gnss_reanchor_min_speed && net >= 1.0 &&
       net >= 0.7 * fix_path) {          // roughly straight, so the track IS the heading
     ukf_.reanchor_yaw(std::atan2(last.y - first.y, last.x - first.x),
                       config_.gnss_reanchor_sigma_yaw);
+    reanchor_last_yaw_reset_ = true;
   }
+  reanchor_last_jump_ = std::hypot(ukf_.state().x[X] - pre_x,
+                                   ukf_.state().x[Y] - pre_y);
 
   reanchor_last_t_ = timestamp_seconds;
   ++reanchor_count_;
@@ -2841,6 +2856,10 @@ FusionCoreStatus FusionCore::get_status() const {
   status.zupt_parked_but_moving     = parked_moving_detected_;
   status.gnss_parked_bias_standdown  = gnss_parked_bias_standdown_;
   status.gnss_recovery_inflations    = gnss_recovery_inflations_;
+  status.gnss_reanchors                = reanchor_count_;
+  status.gnss_reanchor_last_t          = reanchor_last_t_ > -1e17 ? reanchor_last_t_ : 0.0;
+  status.gnss_reanchor_last_jump_m     = reanchor_last_jump_;
+  status.gnss_reanchor_last_yaw_reset  = reanchor_last_yaw_reset_;
   status.gnss_reject_after_gap       = reject_after_gap_;
   status.gnss_consecutive_rejects_now = gnss_consecutive_rejects_;
   status.gnss_recovery_last_sigma    = gnss_recovery_last_sigma_;

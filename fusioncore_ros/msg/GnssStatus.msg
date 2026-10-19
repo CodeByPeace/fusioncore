@@ -60,3 +60,17 @@ int32   heading_vs_track_n
 # from this receiver rather than configured. 0.0 = gate not active yet.
 float64 continuity_limit_m
 bool    continuity_learned
+
+# Re-anchor events. A re-anchor is a DELIBERATE position discontinuity: the filter
+# gave up on correcting itself incrementally and jumped the state onto the recent
+# GNSS fixes. On NCLT 2012-08-20 one moved the estimate 787 m and took the error
+# from 798 m to 16.8 m, so the jump is the fix and not the fault. A consumer that
+# cannot see it happen has no way to tell it apart from divergence, and would chase
+# it or replan against it; both are wrong. reanchored is true on exactly the fix
+# that re-anchored, so a nav stack can act on the edge rather than poll a counter.
+# A yaw reset invalidates a plan that a position jump alone does not, so it is
+# reported separately.
+bool    reanchored
+float64 reanchor_jump_m
+bool    reanchor_yaw_reset
+int32   reanchor_count
