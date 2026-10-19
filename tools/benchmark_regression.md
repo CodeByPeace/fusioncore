@@ -1989,3 +1989,57 @@ note saying which field to read. This is the same class as the claim-type confus
 `provenance.py` earlier today: the measurement was right and the label could not say
 which thing it described. `check_readme_benchmark.py` reports 0 violations after the
 change.
+
+### The prediction, written before the measurement
+
+So the hypothesis for the node-versus-replay gap is not one mechanism but three that
+compound, and reading `nclt_player.py` added the third:
+
+1. Sensor subscriptions are `SensorDataQoS`: KEEP_LAST, **depth 5**, BEST_EFFORT.
+   Overflow is a silent drop.
+2. All sensor callbacks share one `MutuallyExclusive` group, so a 100 Hz IMU, the
+   encoder and GNSS serialise behind a single thread, and a GNSS update on a 23-state
+   UKF is not cheap.
+3. **The player catches up by bursting.** Its loop computes
+   `sleep_s = wall_start + sim_elapsed/rate - now` and sleeps only when that is
+   positive. Fall behind and it publishes as fast as it can until it is level again.
+   So load produces a burst, and the burst meets a five-deep best-effort queue.
+
+**Predictions, so this can be wrong on the record:**
+
+- The node CONSUMES fewer IMU messages than the player publishes. On 2012-09-28 the
+  player logs 218450 IMU rows, so consumed should fall measurably short of that.
+- The shortfall tracks the ATE gap: the sequences with the worst node-versus-replay
+  disagreement should show the largest deficit.
+- Re-running with RELIABLE and a depth of 1000 closes most of the gap.
+
+**What falsifies it:** consumed counts matching published counts. The node would then
+be seeing every measurement and the gap is arrival-order processing (there is no
+reorder buffer anywhere in the node, so it does process in arrival order) or `predict`
+cadence instead. The achieved filter rate is the first clue either way, and it is
+already recorded: all nine baseline entries ran at 99.9 to 103.1 Hz, which is NOT the
+picture of a starved node, and that is mild evidence AGAINST drops being the whole
+story before the test is even run. Worth saying now rather than after.
+
+**On the fix, if the prediction holds.** Not a multi-threaded executor: that trades
+drops for ordering races, and this node currently has a single-threaded ordering
+guarantee worth keeping. The shape that keeps determinism is trivial callbacks that
+only push into a timestamp-ordered buffer, with one loop draining it in timestamp
+order. That also fixes the arrival-order question in the same change, and it is the
+only version where the node and replay can be expected to agree.
+
+### Why nclt_player.py needs to stream, and why that is not a free change
+
+It builds every event in memory and sorts: `self._events` holds roughly 440,000 tuples
+for 2012-09-28, each IMU entry carrying a nine-float list. On a 5.6 GB machine that is
+enough for the OOM killer to take it, which is exactly what happened on the first node
+attempt (exit -9) when analysis scripts were running alongside.
+
+The clean fix is a `heapq.merge` across three generators, since each CSV is already
+time-sorted, which makes memory O(1) in the number of events.
+
+**But the player is part of the measurement chain, so changing it can change published
+numbers.** It will not be committed without first asserting that the new loader emits a
+byte-identical event sequence to the current one for a full sequence. That check costs
+nothing and is the whole reason to be careful here: this file already contains a case
+where a dataset player's frame error invalidated every number measured through it.
