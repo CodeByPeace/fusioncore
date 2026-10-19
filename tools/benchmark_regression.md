@@ -1833,3 +1833,52 @@ two previously unanswerable things answerable: whether a heading source helps, a
 whether the coast's drift is a heading problem or a speed problem. It does NOT help
 inside the blackouts, because that is exactly where truth is absent. The 18% gap
 coverage figure stands unchanged.
+
+## 2026-10-19  The node-versus-replay gap: a structural suspect, NOT yet a measurement
+
+Replay scores 137 m where the node scores 194 m on the same sequence, same commit, same
+data, about 40%. That is the largest unexplained number in this file and it is the one
+that matters most to a user, because users run the node. Node run-to-run spread is
+14.8% and replay's is zero, so the gap is far outside both.
+
+**What is confirmed by reading the code and the ROS headers, not by measuring:**
+
+Every sensor subscription in `fusion_node.cpp` uses `rclcpp::SensorDataQoS()`. From
+`rmw/qos_profiles.h`, that profile is:
+
+    KEEP_LAST, depth 5, BEST_EFFORT, VOLATILE
+
+So the queue is five messages deep and delivery is best effort: under load, messages
+are dropped, silently, with nothing in any log. Replay reads a file and drops nothing,
+ever.
+
+And all sensor callbacks share ONE callback group:
+
+    sensor_cb_group_ = create_callback_group(CallbackGroupType::MutuallyExclusive)
+
+which serialises them. A 100 Hz IMU, the encoder and GNSS all queue behind one thread,
+and a GNSS update on a 23-state UKF is not cheap. A stall of 50 ms at 100 Hz overflows
+a depth-5 queue.
+
+**That is a mechanism, and mechanisms have been wrong here before.** Three of the
+"obvious" explanations in this file were falsified by measurement, so this one is
+labelled a hypothesis until the following is run:
+
+1. Count messages the node actually CONSUMES per sensor, which it does not currently
+   do, and compare against what the player published (the player logs its row counts:
+   218450 IMU rows on 2012-09-28). A deficit is the proof. Equal counts falsify it
+   outright and the gap is elsewhere.
+2. If a deficit exists, re-run with RELIABLE and depth 1000 on the sensor topics. If
+   the gap closes, that is the cause and it is also a one-line user-facing fix.
+3. Only then look at the other two suspects: arrival-order rather than timestamp-order
+   processing, which the node does do (there is no reorder buffer anywhere in it), and
+   `predict` running once per message.
+
+**What would make suspect 1 the wrong answer:** the achieved filter rate. `run_nclt.sh`
+already reports it and calls a run under 80 Hz starved. If the node holds ~100 Hz and
+still scores 194 m, it is not dropping much and the gap is arrival order or predict
+cadence instead. That number comes out of the run finishing now.
+
+Noted as a known gap in the public correction draft rather than left for a reader to
+find, because the published improvements are replay numbers and I cannot yet say how
+much of them reaches a deployment.
