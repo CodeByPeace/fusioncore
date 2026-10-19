@@ -237,6 +237,74 @@ said so for weeks.
 
 FusionCore against robot_localization on the [NCLT dataset](http://robots.engin.umich.edu/nclt/): same IMU, wheel odometry and GPS, no manual tuning, twelve full-length sequences across all seasons. RL-EKF run with chi-squared-equivalent thresholds at 99.9% confidence.
 
+> **Status, 2026-10-18, and this supersedes every dated note below it.**
+>
+> **The baseline this table never had: raw, unfiltered GNSS.** Take the fixes straight out
+> of the log, score them as a trajectory, and compare. Scored at identical points, both
+> through the same scorer, five sequences (2012-01-08 is excluded, see the withdrawal
+> below):
+>
+> | Sequence | Raw GNSS | FusionCore, before | FusionCore, after | After, as ratio to raw GNSS |
+> |---|---|---|---|---|
+> | 2012-02-04 | 58.672 m | 144.903 m | **60.522 m** | 1.03x |
+> | 2012-06-15 | 9.046 m | 10.945 m | 10.945 m | 1.21x |
+> | 2012-08-20 | 32.238 m | 176.805 m | **39.397 m** | 1.22x |
+> | 2012-09-28 | 8.983 m | 23.956 m | **9.866 m** | 1.10x |
+> | 2013-04-05 | 8.561 m | 10.149 m | **8.752 m** | 1.02x |
+>
+> **Unfiltered GNSS has a lower ATE RMSE than FusionCore on all five sequences, before and
+> after.** That is the first thing a careful reader should check and it was not anywhere in
+> this repository until now. Before the fix below, fusing made the answer 1.19x to 5.48x
+> worse than not fusing. After it, 1.02x to 1.22x worse. The medians were already at parity
+> and still are.
+>
+> **Where the error actually was.** Classifying each sequence by whether a GNSS fix was
+> available, using windows taken from the raw fix stream so the classification does not
+> depend on the thing being measured, 75% to 100% of squared error sat in the blackouts or
+> in the re-convergence right after them. On 2012-02-04, 44.5% of the run was spent
+> re-converging and that window held 94.5% of the error.
+>
+> **The cause.** During re-convergence the outlier gate rejected 81% of arriving fixes on
+> 2012-02-04 and 2012-08-20, against 10% across the rest of the run, while adaptive R
+> inflated the measurement noise up to 4,907x. The filter was discarding and discounting
+> precisely the fixes that would have corrected it, because its own covariance said it was
+> confident and the fixes disagreed. A filter that is wrong and certain rejects the
+> evidence that it is wrong.
+>
+> **The fix**, `gnss.reanchor_enabled`, default off: when the gate has been refusing most
+> of what arrives, and the recent fixes are self-consistent against wheel odometry, jump
+> the state onto them instead of waiting for the gate to let them in. Full trajectory:
+> 2012-02-04 142.792 to 59.689, 2012-08-20 171.393 to 46.671, 2012-09-28 23.638 to 10.008,
+> 2013-04-05 16.677 to 16.011, 2012-06-15 unchanged at 78.139. No sequence regresses on
+> RMSE. 16 re-anchors across five sequences and roughly 25,000 s of driving; the smallest
+> error any of them fired at was 138 m, so none fires while the filter is healthy.
+>
+> **What is still not true, stated plainly:**
+> - FusionCore does not beat unfiltered GNSS on RMSE on any of these five sequences.
+> - 2012-06-15 does not move, because 84.6% of its error is inside one 462 s blackout and
+>   re-anchoring acts only after a blackout ends. Error accumulated during a blackout is
+>   dead reckoning drift and is untouched by this work.
+> - Whether the filter's coast beats plain dead reckoning during a blackout **cannot be
+>   answered on NCLT**: its ground truth covers only 18% of GNSS gap time and 2 of 5
+>   sequences have no ground truth at all inside their gaps, because NCLT's own ground
+>   truth degrades under the conditions that take the GNSS out.
+> - 2012-09-28's path length ratio gets **worse** with the fix on, 1.048 to 1.106, while
+>   its RMSE improves 2.36x. If your consumer integrates the path rather than reading the
+>   pose, that trade matters.
+> - The bimodal `ukf.q_angular_vel` behaviour, where a 33% parameter change flips the
+>   filter between a path ratio near 1.0 and near 0.17, is **not** fixed by this and is
+>   still open.
+>
+> **Withdrawn here:** every replay figure for 2012-01-08 measured on 2026-10-18, because
+> that export covers 66% of the sequence (3740 s of 5640 s). The 185.2 m node figure in the
+> table below is a full-trajectory run and stands. Also withdrawn, from internal notes
+> rather than this page: a claim that dead reckoning beat the filter's coast by 3.4x, which
+> compared 462 s of integration against 276 s of ground truth.
+>
+> Measurement detail, including the ablation that turned the persistent-bias trigger off
+> and the seven labelling errors found and corrected on 2026-10-17, is in
+> `tools/benchmark_regression.md`.
+>
 > **Status, 2026-10-17, and this supersedes the dated notes below it.** **Nine of the
 > twelve rows now have a run record** on corrected input. **FusionCore wins four and loses
 > five.** The four rows added since the 2026-10-10 note were measured on 2026-10-12 at
