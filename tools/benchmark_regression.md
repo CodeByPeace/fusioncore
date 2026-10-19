@@ -937,6 +937,14 @@ Corrected with `tools/subsample_to_fix_times.py`, which keeps only the filter po
 **The medians say something more precise, and more useful.** On four of the six the
 medians are within 2%: 7.024 against 7.116, 4.937 against 4.957, 6.289 against 7.180,
 6.297 against 6.419. **Typical-case accuracy is the same as doing no filtering at all.**
+
+> **CORRECTED 2026-10-19.** That list is wrong: `6.289 against 7.180` is **14.2%**, not
+> within 2%. Computed exactly, of the five valid sequences only **2012-06-15 is within 2%**
+> (+0.4%), with 2013-04-05 next at +2.1%; 2012-09-28 is +14.2% and the other two are +154.1%
+> and +444.1%. So the pre-fix claim is "one sequence at parity and one close", not four.
+> It holds AFTER re-anchoring, where the five run -0.4%, +0.4%, +3.0%, +1.6%, +1.9%: four
+> within 2% and all within 3.1%. The conclusion that the RMSE gap is excursions survives,
+> because it rests on RMSE being far worse than the median, not on how many medians tie.
 The RMSE gap is therefore excursions: the filter matches GNSS most of the time and then
 departs badly. On 2012-02-04 and 2012-08-20 it is worse even in the median, 13.817
 against 35.104 and 7.337 against 39.923.

@@ -257,12 +257,22 @@ FusionCore against robot_localization on the [NCLT dataset](http://robots.engin.
 > this repository until now. Before the fix below, fusing made the answer 1.19x to 5.48x
 > worse than not fusing. After it, 1.02x to 1.22x worse.
 >
-> The medians say where the remaining gap lives. After the fix all five are within 3% of
-> raw GNSS, and on 2012-02-04 the filter's median is slightly better, 13.760 m against
-> 13.817 m. Before the fix three of the five were already at parity while two were not:
-> 2012-02-04 at 35.104 m against 13.817 m and 2012-08-20 at 39.923 m against 7.337 m. So
-> **typical-case accuracy now matches doing no filtering at all, and the entire remaining
-> RMSE gap is excursions**, which is a sharper statement than the RMSE ratio alone.
+> The medians say where the remaining gap lives. Each filter median as a percentage of the
+> raw GNSS median on the same sequence:
+>
+> | Sequence | Raw GNSS median | Before | After |
+> |---|---|---|---|
+> | 2012-02-04 | 13.817 m | +154.1% | **-0.4%** |
+> | 2012-06-15 | 4.937 m | +0.4% | +0.4% |
+> | 2012-08-20 | 7.337 m | +444.1% | +3.0% |
+> | 2012-09-28 | 6.289 m | +14.2% | +1.6% |
+> | 2013-04-05 | 6.287 m | +2.1% | +1.9% |
+>
+> After the fix every median is within 3.1% of unfiltered GNSS and four of the five are
+> within 2%, with 2012-02-04 slightly better than unfiltered. Before it, two sequences were
+> 154% and 444% out. So **typical-case accuracy now matches doing no filtering at all, and
+> the entire remaining RMSE gap is excursions**, which is a sharper statement than the RMSE
+> ratio alone.
 >
 > **Where the error actually was.** Classifying each sequence by whether a GNSS fix was
 > available, using windows taken from the raw fix stream so the classification does not
