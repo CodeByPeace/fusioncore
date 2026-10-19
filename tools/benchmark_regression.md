@@ -1670,3 +1670,78 @@ also publishes the event: `reanchored`, `reanchor_jump_m`, `reanchor_yaw_reset` 
 `reanchor_count` on `/fusion/debug/gnss_status`, plus a WARN log line and three
 `/diagnostics` fields. A re-anchor is a deliberate discontinuity, and a consumer that
 cannot see it happen has to treat an 787 m correction as divergence and chase it.
+
+## 2026-10-19  Three corrections to yesterday, and the yaw reset is gone
+
+### 1. "Bit-identical on all five" was wrong
+
+I wrote that disabling the yaw reset changed nothing on any sequence, bit-identical
+trajectories, and used that to call it inert. The byte comparison was only ever run
+on the bias-trigger arms. Run properly, with the reset removed from the code:
+
+    2012-02-04  bit-identical      2012-06-15  bit-identical
+    2012-09-28  bit-identical      2013-04-05  bit-identical
+    2012-08-20  DIFFERS
+
+On 2012-08-20 the trajectories diverge from t=1345508586.897, row 684185 of 790269:
+position by up to **0.798 m** and a quaternion component by **0.934**, which is a
+large rotation. Position RMSE lands on 46.671 either way.
+
+So the reset was inert in the POSITION METRIC and not in the state. The RMSE agreeing
+to three decimals is what I actually measured; "bit-identical" is what I claimed, and
+it is a stronger statement than the measurement supported.
+
+### 2. NCLT cannot score heading at all, so the truth-yaw rows are withdrawn
+
+`2012-08-20/ground_truth.tum` carries an **exactly identity quaternion on all 11,174
+rows**. Every NCLT ground truth here does. This was already on record from
+2026-06-30, and `tools/gap_deadreckon.py` read yaw out of those quaternions anyway,
+so every row labelled `@truth yaw` in the 2026-10-18 P3 table anchored dead reckoning
+at **0 rad**, not at the true heading. All of those rows are withdrawn, including the
+one I called suggestive: "enc_neg is the strongest of eight columns on 2013-04-05 at
+truth yaw, 38.7% against 94.9%". It was the strongest way of facing due East.
+
+The tool now detects an identity-orientation ground truth and says so instead of
+scoring against a constant, and the truth-anchored variants are gone.
+
+What survives, anchored at the FILTER's own heading so dead reckoning gets nothing the
+filter does not already have:
+
+    2012-06-15, gap 462s, truth covers 276s (60%), 377.7 m travelled
+      filter coast          425.3 m   112.6% of distance
+      gyro  @filter yaw     411.1 m   108.8%
+      enc   @filter yaw     385.9 m   102.2%
+      enc_neg @filter yaw   336.1 m    89.0%
+
+    2013-04-05, gap 275s, truth covers 84s (31%), 114.9 m travelled
+      filter coast          153.6 m   133.7% of distance
+      gyro  @filter yaw     131.6 m   114.5%
+      enc   @filter yaw     140.2 m   122.0%
+      enc_neg @filter yaw   176.1 m   153.2%
+
+Dead reckoning beats the filter's coast on **both** scorable gaps now, 336 against 425
+and 132 against 154. That is a cleaner reading than yesterday's "wins one, loses one",
+which came from mixing in the invalid rows. It is still n=2 at 31-60% coverage, and
+every method is between 89% and 153% of distance travelled, which is worse than
+asserting the robot never moved. The encoder sign does not generalise either:
+`enc_neg` is the best column on 2012-06-15 and the worst on 2013-04-05.
+
+### 3. The yaw reset is removed
+
+Removed, along with `gnss_reanchor_min_speed` and `gnss_reanchor_sigma_yaw`, which
+existed only to gate it, and the `reanchor_yaw_reset` field on GnssStatus. A re-anchor
+now moves position only, so no consumer ever sees a heading discontinuity from one.
+`UKF::reanchor_yaw` still exists and is still tested; nothing calls it.
+
+It is removed because nothing shows it helping, which is weaker than showing it does
+nothing. NCLT cannot tell the difference. If a future dataset with real orientation
+shows heading is the problem, the evidence for putting it back has to be produced.
+`test_gnss_reanchor.cpp` asserts that a re-anchor leaves the quaternion untouched:
+the largest single-step yaw change is 2.11109 rad with re-anchoring and 2.11109 rad
+without, across a 380 m position jump.
+
+### Unchanged by all of this
+
+The shipping numbers do not move: 2012-02-04 59.689, 2012-06-15 78.139, 2012-08-20
+46.671, 2012-09-28 10.008, 2013-04-05 16.011. Four are bit-identical to the
+pre-removal runs and the fifth matches to three decimals.

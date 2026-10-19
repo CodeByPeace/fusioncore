@@ -13,9 +13,16 @@ measures drift accumulated DURING the gap and not error inherited from before it
 Error is reported as a percentage of distance travelled, so a 20 s gap and a 400 s
 gap are comparable.
 
+Every variant is anchored at the FILTER's heading at window entry. There is no
+truth-heading variant, and that is not an omission: NCLT's ground_truth.tum carries
+an EXACTLY IDENTITY quaternion on every row, so it has no heading to anchor to. An
+earlier version of this tool read yaw out of those quaternions and therefore anchored
+dead reckoning at 0 rad rather than at the truth heading. Those rows were published
+on 2026-10-18 and are withdrawn; the tool now refuses a ground truth whose
+orientation is identity rather than quietly scoring against a constant.
+
 Variants:
   filter      the fused trajectory's own displacement over the gap
-  imuq        encoder body speed steered by the IMU's absolute attitude
   gyro        encoder body speed, heading integrated from gyro Z
   enc         encoder body speed, heading integrated from encoder WZ
   enc_neg     the same with WZ negated, because the NCLT wheel yaw rate was never
@@ -210,13 +217,6 @@ def main():
             continue
 
         fy0 = at(fyaw, ta)[1]
-        truth_anchor = {
-            "imuq": dr(enc, ta, tb, p0[3], imuq, pin=p0[3] - at(imuq, ta)[1]),
-            "gyro": dr(enc, ta, tb, p0[3],
-                       _integrate(gyro, ta, tb, p0[3])),
-            "enc": dr(enc, ta, tb, p0[3], None, 1.0),
-            "enc_neg": dr(enc, ta, tb, p0[3], None, -1.0),
-        }
         filt_anchor = {
             "gyro": dr(enc, ta, tb, fy0, _integrate(gyro, ta, tb, fy0)),
             "enc": dr(enc, ta, tb, fy0, None, 1.0),
@@ -230,7 +230,7 @@ def main():
         f0, f1 = fused[j0], fused[j1]
         fdx, fdy = f1[1] - f0[1], f1[2] - f0[2]
 
-        dist = truth_anchor["enc"][2]
+        dist = filt_anchor["enc"][2]
         if dist < a.min_dist:
             skipped.append((t1 - t0, "only %.1fm travelled" % dist))
             continue
@@ -244,10 +244,6 @@ def main():
               % (tdisp, hole))
         print("      %-18s %9s %9s" % ("", "err_m", "%dist"))
         print("      %-18s %9.1f %9.1f" % ("filter coast", ferr, 100.0 * ferr / dist))
-        for k in ("imuq", "gyro", "enc", "enc_neg"):
-            x, y, _ = truth_anchor[k]
-            e = math.hypot(x - tdx, y - tdy)
-            print("      %-18s %9.1f %9.1f" % (k + " @truth yaw", e, 100.0 * e / dist))
         for k in ("gyro", "enc", "enc_neg"):
             x, y, _ = filt_anchor[k]
             e = math.hypot(x - tdx, y - tdy)
@@ -255,8 +251,8 @@ def main():
 
     print("")
     print("  %d gap(s) scored. Error is at the clipped window's exit." % scored)
-    print("  @truth yaw hands dead reckoning a heading the filter does not have, so")
-    print("  those rows bound the filter's deficit. @filter yaw is the fair test.")
+    print("  dead reckoning is anchored at the filter's own heading at window entry,")
+    print("  so it gets no information the filter does not already have.")
     if skipped:
         print("  skipped %d: %s"
               % (len(skipped), ", ".join("%.0fs (%s)" % x for x in skipped)))

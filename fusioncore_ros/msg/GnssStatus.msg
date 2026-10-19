@@ -68,9 +68,9 @@ bool    continuity_learned
 # cannot see it happen has no way to tell it apart from divergence, and would chase
 # it or replan against it; both are wrong. reanchored is true on exactly the fix
 # that re-anchored, so a nav stack can act on the edge rather than poll a counter.
-# A yaw reset invalidates a plan that a position jump alone does not, so it is
-# reported separately.
+# A re-anchor moves POSITION ONLY: there is no heading discontinuity to report,
+# because the yaw reset that used to accompany it was removed after showing no
+# measurable benefit.
 bool    reanchored
 float64 reanchor_jump_m
-bool    reanchor_yaw_reset
 int32   reanchor_count

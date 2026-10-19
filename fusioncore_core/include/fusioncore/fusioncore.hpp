@@ -713,11 +713,9 @@ struct FusionCoreConfig {
   double gnss_reanchor_odom_tol_m = 4.0;
   // Minimum speed, m/s, before the GNSS track is trusted as a heading source.
   // Below this the bearing between fixes is receiver noise, not a direction.
-  double gnss_reanchor_min_speed = 0.7;
   // Position sigma to leave behind after re-anchoring, metres.
   double gnss_reanchor_sigma_xy = 5.0;
   // Yaw sigma to leave behind when heading is reset, radians.
-  double gnss_reanchor_sigma_yaw = 0.35;
   // TIME BOUND. No second re-anchor within this many seconds, and normal gating
   // resumes immediately afterwards because nothing here latches. A test asserts
   // that it does.
@@ -1116,13 +1114,13 @@ struct FusionCoreStatus {
   // A re-anchor is a deliberate position discontinuity: on NCLT 2012-08-20 one moved
   // the estimate 787 m and took the error from 798 m to 16.8 m. A consumer that cannot
   // see it happen has to treat it as divergence and chase it, which is the opposite of
-  // what it should do. jump_m is the distance the state moved, and yaw_reset says
-  // whether heading was reset too, because a heading jump invalidates a plan that a
-  // position jump alone does not.
+  // what it should do. jump_m is the distance the state moved. A re-anchor moves
+  // POSITION ONLY, so a consumer never sees a heading discontinuity from one: the yaw
+  // reset that used to sit beside it was removed on 2026-10-18, having shown no
+  // measurable benefit on NCLT, which cannot score heading at all.
   long   gnss_reanchors = 0;
   double gnss_reanchor_last_t = 0.0;
   double gnss_reanchor_last_jump_m = 0.0;
-  bool   gnss_reanchor_last_yaw_reset = false;
   // #151: the two flags that decide whether recovery can run at all.
   bool   gnss_reject_after_gap = false;
   int    gnss_consecutive_rejects_now = 0;
@@ -1507,7 +1505,6 @@ private:
   std::deque<bool> reanchor_recent_;   // true = rejected, most recent at the back
   long   reanchor_count_  = 0;
   double reanchor_last_jump_ = 0.0;
-  bool   reanchor_last_yaw_reset_ = false;
   bool   maybe_reanchor(double timestamp_seconds);
   int  gnss_consecutive_accepts_  = 0;
   // Recovery mode: after a timeout-triggered coast, accept the first returning

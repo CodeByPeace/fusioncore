@@ -1625,7 +1625,6 @@ bool FusionCore::maybe_reanchor(double timestamp_seconds)
   // tried and never fired on anything realistic: at 1 Hz with sigma 3 m fixes the
   // displacement between two consecutive fixes carries about 4.2 m of noise on
   // roughly 1 m of motion, so the check failed on healthy data. Scale it.
-  double fix_path = 0.0, odom_path = 0.0;
   for (size_t i = 1; i < reanchor_buf_.size(); ++i) {
     const auto& a = reanchor_buf_[i-1];
     const auto& b = reanchor_buf_[i];
@@ -1633,8 +1632,6 @@ bool FusionCore::maybe_reanchor(double timestamp_seconds)
     const double d_odom = std::abs(b.odom - a.odom);
     const double noise  = 3.0 * std::hypot(a.sigma, b.sigma);
     if (std::abs(d_fix - d_odom) > config_.gnss_reanchor_odom_tol_m + noise) return false;
-    fix_path  += d_fix;
-    odom_path += d_odom;
   }
   // The NET displacement across the whole buffer is the stronger test: noise
   // averages down over the span while a real disagreement does not.
@@ -1648,35 +1645,44 @@ bool FusionCore::maybe_reanchor(double timestamp_seconds)
 
   const auto& last  = reanchor_buf_.back();
   const auto& first = reanchor_buf_.front();
-  const double dt = last.t - first.t;
-  if (dt <= 1e-6) return false;
+  if (last.t - first.t <= 1e-6) return false;
+  (void)first;
 
   const double pre_x = ukf_.state().x[X];
   const double pre_y = ukf_.state().x[Y];
   ukf_.reanchor_position(last.x, last.y, last.z,
                          config_.gnss_reanchor_sigma_xy,
                          config_.gnss_reanchor_sigma_xy * 2.0);
-  reanchor_last_yaw_reset_ = false;
 
-  // Heading too, when the robot is actually moving.
+  // NO HEADING RESET. A re-anchor moves position only, and that is a measured
+  // decision rather than an omission.
   //
-  // This comment used to claim that position alone does not fix 2012-09-28, whose
-  // fixes are accepted at a median mahalanobis of 0.526 while the error persists,
-  // and that the heading it left the gap with is why. That claim is WITHDRAWN,
-  // measured 2026-10-18. Disabling this reset changes 2012-09-28 from 13.750 to
-  // 13.748 and the other four sequences by at most 1.1%, and with the bias trigger
-  // off it changes nothing at all on any sequence, bit-identical trajectories. The
-  // reset is close to inert. It is kept because resetting a heading the filter has
-  // just admitted is wrong is the right thing to do and it costs nothing, not
-  // because any measurement shows it helping.
-  const double speed = odom_path / dt;
-  const double net   = std::hypot(last.x - first.x, last.y - first.y);
-  if (speed >= config_.gnss_reanchor_min_speed && net >= 1.0 &&
-      net >= 0.7 * fix_path) {          // roughly straight, so the track IS the heading
-    ukf_.reanchor_yaw(std::atan2(last.y - first.y, last.x - first.x),
-                      config_.gnss_reanchor_sigma_yaw);
-    reanchor_last_yaw_reset_ = true;
-  }
+  // There was a yaw reset here, taking heading from the bearing between the first
+  // and last buffered fix. The comment beside it claimed position alone does not
+  // fix 2012-09-28, whose fixes are accepted at a median mahalanobis of 0.526
+  // while the error persists, and that the heading it left the gap with is why.
+  // WITHDRAWN 2026-10-18. Disabling the reset moved 2012-09-28 from 13.750 to
+  // 13.748, and with the bias trigger off, which is now the default, position RMSE
+  // was unchanged to three decimals on all five sequences.
+  //
+  // Be precise about what that does and does not show, because the first version of
+  // this comment said "bit-identical on all five" and that was wrong. Four of the
+  // five ARE bit-identical. On 2012-08-20 the trajectories diverge from t=1345508586:
+  // position by up to 0.798 m and a quaternion component by 0.934, which is a large
+  // rotation, while the position RMSE lands on 46.671 either way. So the reset was
+  // not inert in the STATE, it was inert in the position metric.
+  //
+  // And NCLT cannot settle it either way: ground_truth.tum carries an exactly
+  // identity quaternion on every row, so the dataset has no heading to score against.
+  // Removed because there is no evidence it helps and it is one more thing to be
+  // wrong, not because it was proven to do nothing.
+  //
+  // Keeping position-only also means a re-anchor cannot rotate the estimate, so a
+  // consumer sees a translation and never a heading discontinuity. UKF::reanchor_yaw
+  // still exists and is still tested; nothing calls it. test_gnss_reanchor.cpp
+  // asserts that a re-anchor leaves the quaternion untouched, so if a future
+  // sequence needs heading the evidence for adding it has to be produced, not
+  // assumed.
   reanchor_last_jump_ = std::hypot(ukf_.state().x[X] - pre_x,
                                    ukf_.state().x[Y] - pre_y);
 
@@ -2859,7 +2865,6 @@ FusionCoreStatus FusionCore::get_status() const {
   status.gnss_reanchors                = reanchor_count_;
   status.gnss_reanchor_last_t          = reanchor_last_t_ > -1e17 ? reanchor_last_t_ : 0.0;
   status.gnss_reanchor_last_jump_m     = reanchor_last_jump_;
-  status.gnss_reanchor_last_yaw_reset  = reanchor_last_yaw_reset_;
   status.gnss_reject_after_gap       = reject_after_gap_;
   status.gnss_consecutive_rejects_now = gnss_consecutive_rejects_;
   status.gnss_recovery_last_sigma    = gnss_recovery_last_sigma_;

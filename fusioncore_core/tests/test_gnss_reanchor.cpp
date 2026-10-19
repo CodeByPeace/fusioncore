@@ -51,6 +51,7 @@ struct Outcome {
   double err_300s = 0.0;
   long   reanchors = 0;
   double last_jump = 0.0;
+  double max_yaw_step = 0.0;   // largest single-step heading change, radians
 };
 
 // Truth drives straight East. During the blackout the wheels over-report, so the
@@ -67,6 +68,8 @@ Outcome run(FusionCore& fc, double blackout_s) {
 
   Outcome o;
   double true_x = 0.0;
+  double prev_yaw = 0.0;
+  bool   have_prev_yaw = false;
   for (int step = 1; step * dt <= t_end + 1e-9; ++step) {
     const double t = step * dt;
     true_x += TRUE_SPEED * dt;
@@ -83,6 +86,20 @@ Outcome run(FusionCore& fc, double blackout_s) {
     const double err = std::abs(fc.get_state().x[X] - true_x);
     if (std::abs(t - (t_out_end +  30.0)) < dt * 0.5) o.err_30s  = err;
     if (std::abs(t - (t_out_end + 300.0)) < dt * 0.5) o.err_300s = err;
+
+    // Largest single-step heading change anywhere in the run. A re-anchor must not
+    // show up here: it moves position only.
+    const auto& x = fc.get_state().x;
+    const double yaw = std::atan2(2.0 * (x[QW] * x[QZ] + x[QX] * x[QY]),
+                                  1.0 - 2.0 * (x[QY] * x[QY] + x[QZ] * x[QZ]));
+    if (have_prev_yaw) {
+      double d = yaw - prev_yaw;
+      while (d >  M_PI) d -= 2.0 * M_PI;
+      while (d < -M_PI) d += 2.0 * M_PI;
+      o.max_yaw_step = std::max(o.max_yaw_step, std::abs(d));
+    }
+    prev_yaw = yaw;
+    have_prev_yaw = true;
   }
   o.reanchors = fc.gnss_reanchor_count();
   o.last_jump = fc.get_status().gnss_reanchor_last_jump_m;
@@ -170,4 +187,38 @@ TEST(GnssReanchorTest, DoesNotStorm) {
   EXPECT_GT(o.reanchors, 0);
   EXPECT_LE(o.reanchors, 10)
     << "re-anchored " << o.reanchors << " times in 300 s of recovery";
+}
+
+// A re-anchor moves POSITION ONLY. This is the evidence for that decision, kept so
+// that adding a heading reset back has to be justified by a measurement rather than
+// by the argument that it sounds right.
+//
+// There WAS a yaw reset, taking heading from the bearing between the first and last
+// buffered fix. Measured 2026-10-18: disabling it moved NCLT 2012-09-28 from 13.750
+// to 13.748, and position RMSE was unchanged to three decimals on all five
+// sequences. Four of the five were bit-identical; on 2012-08-20 the state diverged,
+// a quaternion component by 0.934 and position by up to 0.798 m, while the RMSE
+// landed on 46.671 either way. So it was inert in the position metric, not in the
+// state, and NCLT cannot judge the difference because its ground truth carries an
+// exactly identity quaternion on every row. It was removed because nothing shows it
+// helping, which is a weaker claim than proving it does nothing.
+TEST(GnssReanchorTest, ReanchoringDoesNotTouchHeading) {
+  auto off = reanchor_config();
+  FusionCore fc_off(off);
+  const auto baseline = run(fc_off, 460.0);
+
+  auto on = reanchor_config();
+  on.gnss_reanchor_enabled = true;
+  FusionCore fc_on(on);
+  const auto fixed = run(fc_on, 460.0);
+
+  std::cerr << "  largest single-step yaw change: " << baseline.max_yaw_step
+            << " rad without re-anchoring, " << fixed.max_yaw_step << " rad with, "
+            << "over a " << fixed.last_jump << " m position jump\n";
+
+  ASSERT_GT(fixed.reanchors, 0);
+  // The jump is hundreds of metres. If any of it reached heading, the largest yaw
+  // step would separate clearly from the no-re-anchor arm.
+  EXPECT_LT(fixed.max_yaw_step, baseline.max_yaw_step + 1e-3)
+    << "a re-anchor changed heading; it is supposed to move position only";
 }

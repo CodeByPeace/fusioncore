@@ -482,9 +482,7 @@ public:
     declare_parameter("gnss.reanchor_bias_m",        8.0);
     declare_parameter("gnss.reanchor_buffer_n",      5);
     declare_parameter("gnss.reanchor_odom_tol_m",    4.0);
-    declare_parameter("gnss.reanchor_min_speed",     0.7);
     declare_parameter("gnss.reanchor_sigma_xy",      5.0);
-    declare_parameter("gnss.reanchor_sigma_yaw",     0.35);
     declare_parameter("gnss.reanchor_cooldown_s",    20.0);
     declare_parameter("gnss.recovery_timeout_s",    0.0);
     // How far the robot must travel before heading is declared observable and
@@ -958,10 +956,7 @@ public:
     config.gnss_reanchor_buffer_n     = get_parameter("gnss.reanchor_buffer_n").as_int();
     config.gnss_reanchor_odom_tol_m   =
       get_parameter("gnss.reanchor_odom_tol_m").as_double();
-    config.gnss_reanchor_min_speed    =
-      get_parameter("gnss.reanchor_min_speed").as_double();
     config.gnss_reanchor_sigma_xy     = get_parameter("gnss.reanchor_sigma_xy").as_double();
-    config.gnss_reanchor_sigma_yaw    = get_parameter("gnss.reanchor_sigma_yaw").as_double();
     config.gnss_reanchor_cooldown_s   =
       get_parameter("gnss.reanchor_cooldown_s").as_double();
     config.gnss_coast_n               = get_parameter("gnss.coast_n").as_int();
@@ -3656,14 +3651,12 @@ private:
       msg.reanchor_count     = static_cast<int32_t>(st_now.gnss_reanchors);
       msg.reanchored         = st_now.gnss_reanchors > last_reanchor_count_;
       msg.reanchor_jump_m    = st_now.gnss_reanchor_last_jump_m;
-      msg.reanchor_yaw_reset = st_now.gnss_reanchor_last_yaw_reset;
       if (msg.reanchored) {
         RCLCPP_WARN(get_logger(),
-          "GNSS re-anchor: position jumped %.2f m%s. This is a deliberate "
-          "discontinuity, not divergence. Re-anchor %d this run.",
-          msg.reanchor_jump_m,
-          msg.reanchor_yaw_reset ? " and heading was reset" : "",
-          msg.reanchor_count);
+          "GNSS re-anchor: position jumped %.2f m. This is a deliberate "
+          "discontinuity, not divergence, and it moves position only. "
+          "Re-anchor %d this run.",
+          msg.reanchor_jump_m, msg.reanchor_count);
       }
       last_reanchor_count_ = st_now.gnss_reanchors;
     }
@@ -3955,9 +3948,8 @@ private:
        {"heading_last_reason",  heading_reason_str(status.heading_reason)},
        {"heading_last_chi2",    std::to_string(status.heading_chi2)},
        {"reanchors",            std::to_string(status.gnss_reanchors)},
-       {"reanchor_last_jump_m", std::to_string(status.gnss_reanchor_last_jump_m)},
-       {"reanchor_last_yaw_reset",
-          status.gnss_reanchor_last_yaw_reset ? "true" : "false"}}));
+       {"reanchor_last_jump_m",
+          std::to_string(status.gnss_reanchor_last_jump_m)}}));
 
     // VSLAM (only shown when configured)
     if (!vslam_topic_.empty()) {
