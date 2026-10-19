@@ -1283,8 +1283,27 @@ void FusionCore::update_imu_orientation(
 
   // IMU orientation validates heading ONLY if the IMU has a magnetometer.
   // 6-axis IMUs integrate gyro for yaw: this drifts and is not a valid
-  // heading reference. 9-axis IMUs with magnetometer give true heading.
+  // heading reference.
   // peci1 fix: don't blindly trust IMU orientation as heading source.
+  //
+  // CORRECTION 2026-10-19: this comment used to end "9-axis IMUs with magnetometer
+  // give true heading". They do not. They give MAGNETIC heading, and the difference
+  // is the local declination: about 7 degrees in Michigan, over 15 in parts of the
+  // US west coast, and it is a constant bias straight into yaw.
+  //
+  // `mag.declination_rad` exists and is applied in exactly one place,
+  // magnetometer.hpp computing yaw from a raw field. Nothing applies it on THIS
+  // path, where the IMU hands us an orientation quaternion that is already
+  // magnetic-referenced, so a user with a 9-axis IMU and a true-north map carries
+  // the declination as heading bias with nothing saying so.
+  //
+  // Not fixed in this commit because it is a behaviour change that needs its own
+  // test. What already exists and would surface it: the heading_vs_track_deg
+  // cross-check on /fusion/debug/gnss_status, whose own documentation names
+  // declination as a cause of an offset that stays constant across headings.
+  //
+  // No NCLT result is affected: that config sets imu.has_magnetometer false and
+  // takes yaw from GPS track only, so this branch never runs there.
   if (config_.imu_has_magnetometer) {
     if (!heading_validated_ ||
         heading_source_ == HeadingSource::GPS_TRACK) {

@@ -1882,3 +1882,47 @@ cadence instead. That number comes out of the run finishing now.
 Noted as a known gap in the public correction draft rather than left for a reader to
 find, because the published improvements are replay numbers and I cannot yet say how
 much of them reaches a deployment.
+
+## 2026-10-19  The ~7 degree residual in the heading-truth offset, and a real defect behind it
+
+The course-over-ground heading truth fits the IMU's own attitude with one constant
+offset: 97.33 deg on 2012-08-20 and 96.47 deg on 2012-06-15. Ninety of that is the
+NED-against-ENU convention. The residual is 7.33 and 6.47 degrees.
+
+**That residual is very probably magnetic declination.** NCLT was recorded in Ann
+Arbor, where magnetic north sits several degrees west of true north, and the IMU's
+attitude is magnetic-referenced while course over ground is true-referenced. A
+constant of that size, stable across sequences months apart, is what declination looks
+like.
+
+**Stated as a hypothesis, because NCLT cannot separate it from a mounting offset.**
+Declination is a property of location and the whole dataset is one campus, so a fixed
+sensor misalignment would be indistinguishable. A web search did not return an
+authoritative Ann Arbor 2012 value, so the figure is not quoted here. What CAN be
+tested on this dataset is consistency: all five sequences span 14 months, and if the
+residual is declination they should agree to within the estimation noise, with at most
+about 0.1 deg of secular drift. That is queued behind the node runs.
+
+### The defect it led to, which is not about NCLT
+
+`imu.has_magnetometer: true` makes the IMU's orientation quaternion the heading source
+(`HeadingSource::IMU_ORIENTATION`). The comment there asserted that "9-axis IMUs with
+magnetometer give true heading". **They do not. They give magnetic heading.**
+
+`mag.declination_rad` exists and is applied in exactly ONE place: `magnetometer.hpp`,
+computing yaw from a raw magnetic field. Counted: `fusioncore.cpp` contains zero
+references to declination. So on the IMU-orientation path nothing applies it, and a
+user with a 9-axis IMU and a true-north map carries the local declination as a constant
+heading bias, with nothing in the code or the docs telling them. Roughly 7 degrees in
+Michigan and over 15 in parts of the US west coast.
+
+No NCLT number is affected: `nclt_fusioncore.yaml` sets `imu.has_magnetometer: false`
+and takes yaw from GPS track only, so that branch never runs in any result in this
+file. This is a user-facing defect, not a benchmark one.
+
+The comment is corrected. The fix is not in that commit, because applying a rotation to
+a fused orientation is a behaviour change that needs its own test, and the build is
+occupied by the node runs. What already exists and would surface the symptom: the
+`heading_vs_track_deg` cross-check on `/fusion/debug/gnss_status`, whose own
+documentation already names declination as a cause of an offset that stays constant
+across headings. It detects it and nothing corrects it.
