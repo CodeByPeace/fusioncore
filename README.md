@@ -255,8 +255,14 @@ FusionCore against robot_localization on the [NCLT dataset](http://robots.engin.
 > **Unfiltered GNSS has a lower ATE RMSE than FusionCore on all five sequences, before and
 > after.** That is the first thing a careful reader should check and it was not anywhere in
 > this repository until now. Before the fix below, fusing made the answer 1.19x to 5.48x
-> worse than not fusing. After it, 1.02x to 1.22x worse. The medians were already at parity
-> and still are.
+> worse than not fusing. After it, 1.02x to 1.22x worse.
+>
+> The medians say where the remaining gap lives. After the fix all five are within 3% of
+> raw GNSS, and on 2012-02-04 the filter's median is slightly better, 13.760 m against
+> 13.817 m. Before the fix three of the five were already at parity while two were not:
+> 2012-02-04 at 35.104 m against 13.817 m and 2012-08-20 at 39.923 m against 7.337 m. So
+> **typical-case accuracy now matches doing no filtering at all, and the entire remaining
+> RMSE gap is excursions**, which is a sharper statement than the RMSE ratio alone.
 >
 > **Where the error actually was.** Classifying each sequence by whether a GNSS fix was
 > available, using windows taken from the raw fix stream so the classification does not
