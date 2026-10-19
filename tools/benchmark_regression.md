@@ -2043,3 +2043,65 @@ numbers.** It will not be committed without first asserting that the new loader 
 byte-identical event sequence to the current one for a full sequence. That check costs
 nothing and is the whole reason to be careful here: this file already contains a case
 where a dataset player's frame error invalidated every number measured through it.
+
+## 2026-10-19  The node-versus-replay gap is NOT 40%, and the 137-against-194 pairing is stale
+
+The premise I have been working from, carried in CLAUDE.md since 2026-09-27, is that
+replay scores 137 m where the node scores 194 m on the same sequence and commit, about
+40%, and that this is the most important user-facing defect because users run the node.
+
+**Measured, it is not true of the current code.** Replay with re-anchoring OFF, measured
+today, against the node figures in `benchmark_baseline.json`, both on
+`nclt_fusioncore.yaml`:
+
+    sequence         replay       node   node/replay   node run
+    2012-02-04      142.792    153.097         1.07x   a4aae82, 2026-10-09, n=3
+    2012-06-15       78.139     82.011         1.05x   a4aae82, 2026-10-09, n=2
+    2012-08-20      171.393    155.618         0.91x   a4aae82, 2026-10-09, n=2
+    2012-09-28       23.638     18.594         0.79x   a4aae82, 2026-10-09, n=2
+    2013-04-05       16.677     14.058         0.84x   a4aae82, 2026-10-09, n=2
+
+The node runs between **21% BETTER and 7% worse** than replay. It is not a uniform
+penalty and it is signed in both directions. Three of the five differences are inside
+the node's own measured 14.8% run-to-run spread.
+
+**The configs really do match**, which was checked rather than assumed, because this is
+exactly where the earlier errors came from. The replay arms drop seven keys from the
+YAML and re-supply six. Each one:
+
+    ukf.q_acceleration        YAML 1.0      replay default get(...,1.0)       same
+    ukf.q_gyro_bias           YAML 1.0e-5   replay arg 1e-5                   same
+    ukf.q_accel_bias          YAML 1.0e-5   replay arg 1e-5                   same
+    ukf.q_encoder_wz_bias     YAML 1.0e-7   replay arg 1e-7                   same
+    imu.gyro_bias_initial_sigma     not in YAML, node declares 0.175, replay 0.175
+    imu.accel_bias_initial_sigma    not in YAML, node declares 0.30,  replay 0.30
+    encoder.wz_scale_initial_sigma  not in YAML, node declares 0.30,  replay 0.30
+
+`platform.profile` is NOT set in that config, which matters: the profile table would
+override those three sigmas to 1.0e-6 and the configs would then differ. It does not.
+
+**The node side reproduces.** A fresh node run today with re-anchoring off scored
+**18.625** against the recorded **18.594** from 2026-10-09, 0.17% apart, at 102.6 Hz
+with no starvation. So the node pipeline is stable across that commit range on this
+sequence and the baseline figures can be used.
+
+**The caveat, stated:** the replay column was measured at today's commit and the node
+column at `a4aae82` from 2026-10-09. Different commits, so each ratio carries that
+uncertainty. The 0.17% reproduction on one sequence is evidence the node side did not
+move much, not proof for all five.
+
+### What this changes
+
+The 137-against-194 pairing dates from 2026-09-27, before the #169 frame fix and
+everything after it. **It should not be quoted as the current state and CLAUDE.md is
+corrected.** There is still a real pipeline disagreement worth understanding, up to 21%
+on 2012-09-28, but it is modest, it favours the node as often as not, and it does not
+mean the improvements measured on replay fail to reach a deployment.
+
+The three mechanisms from the prediction above remain real as mechanisms: depth-5
+BEST_EFFORT queues, one serialised callback group, and a player that bursts to catch up.
+What they do not have is the 40% effect they were invoked to explain. The drop counter
+still goes in, because a silent drop is a defect whatever its size, and because the
+prediction deserves a real test rather than quiet abandonment. But it drops down the
+priority list, and the honest reason is that the number it was meant to explain was
+measured wrong.
