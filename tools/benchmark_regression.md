@@ -1926,3 +1926,66 @@ occupied by the node runs. What already exists and would surface the symptom: th
 `heading_vs_track_deg` cross-check on `/fusion/debug/gnss_status`, whose own
 documentation already names declination as a cause of an offset that stays constant
 across headings. It detects it and nothing corrects it.
+
+## 2026-10-19  Audit: did any published robot_localization number come from a starved run?
+
+Prompted by a node run in which `ekf_node` and `navsat_transform_node` both died at
+startup with exit -2. If the control can crash, then the control figures in the
+published table need checking, because robot_localization IS the comparison baseline
+and a degraded control flatters FusionCore.
+
+**First, that crash was mine.** `run_nclt.sh`'s own `cleanup()` kills `ekf_node` and
+`navsat_transform` by pattern, and I had run overlapping `pkill`s while tearing down a
+contended run. In the clean run the control comes up fine and is still running. Not a
+systematic defect, so nothing to fix there.
+
+**The audit itself**, every entry in `tools/benchmark_baseline.json` against its own
+recorded `achieved_hz` and `rl_starvation_events`:
+
+    sequence         FC_3D     RL_3D      Hz    n  RL_starv
+    2012-01-08     185.195    22.792   102.5    1         0
+    2012-02-04     153.097   123.149   103.1    3         0
+    2012-03-31      28.526   160.574   102.4    1         0
+    2012-05-11       9.606     8.936   102.9    1         0
+    2012-06-15      82.011    45.864    99.9    2         0
+    2012-08-20     155.618    10.389   102.1    2         0
+    2012-09-28      18.594    82.598   102.2    2        24
+    2012-10-28      17.061    25.072   102.6    1         2
+    2013-04-05      14.058     65.51   103.1    2         0
+
+No FusionCore arm was starved: 99.9 to 103.1 Hz against the 80 Hz floor.
+
+Two entries carry non-zero control starvation, and **both are rows FusionCore wins**,
+which is precisely where a starved control would matter. Of the four claimed wins
+(2012-03-31, 2012-09-28, 2012-10-28, 2013-04-05), two are on this list. So the question
+is whether the four-of-nine win count survives.
+
+**It does, and the entries already contained the answer:**
+
+- **2012-09-28.** The 24 events are in the SECOND control run, which scored 91.724. The
+  PUBLISHED figure is 82.598, the first run, which logged **zero**. The note also
+  records that the control's pose count changed by 0.14%, so it was not starved in
+  output, and FusionCore wins by 77% or 80% depending on which control run is used, so
+  the verdict does not turn on it. Worth keeping in view: the control's own spread here
+  is 11.05% against FusionCore's 0.01%, so on this sequence the control is the noisy
+  filter.
+- **2012-10-28.** 2 events across an 86 minute run against a historical rate of about
+  one per 19 minutes. That is the background rate, not starvation. n=1 and the spread
+  is unknown, which the entry already warns about.
+
+**So no published control number came from a starved or crashed run, and the
+correction does not need another correction.**
+
+### The defect this did find is in the record format
+
+`rl_starvation_events` is a single scalar per entry, and on 2012-09-28 it holds 24,
+taken from the worse of two runs, while the published figure came from the run that
+logged 0. Read on its own, that field says the published number is starved when it is
+not. A scalar cannot carry per-run provenance once n > 1.
+
+Fixed in the baseline: `rl_starvation_events_per_run: [0, 24]` and
+`rl_published_run_index: 0` on that entry, with the scalar kept for compatibility and a
+note saying which field to read. This is the same class as the claim-type confusion in
+`provenance.py` earlier today: the measurement was right and the label could not say
+which thing it described. `check_readme_benchmark.py` reports 0 violations after the
+change.
