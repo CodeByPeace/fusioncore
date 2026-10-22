@@ -1121,7 +1121,7 @@ compared at all.
 
 ---
 
-## 2026-10-18, THE ANSWER: 75 to 100% of the error is blackouts and failing to recover
+## 2026-10-18, THE ANSWER: 75 to 97% of the error is blackouts and failing to recover
 
 `tools/blackout_budget.py`. Windows defined from the RAW fix stream so the
 classification does not depend on the filter: a **gap** is no fix for 10 s or more,
@@ -1154,7 +1154,7 @@ Provenance for every row: `replay / nclt_shipped / windows / 100%`.
 **94.0%** from 22.4% of the time. The filter does not lose it in the hole, it loses it
 climbing out.
 
-**And it generalises.** On every one of the five, between **74.8% and 100%** of the error
+**And it generalises.** On every one of the five, between **74.8% and 96.8%** of the error
 lives in gaps or the recovery after them. **Steady coverage never exceeds 25.2%**, and
 on the two worst sequences it is 5.5% and 3.2%.
 
@@ -2239,3 +2239,18 @@ README's is the better figure because all three of its columns go through one sc
 place rather than in every place the claim lives.** A withdrawal has to chase the claim
 into the instruction file, into the paragraph that restates it, and into the document that
 summarises it. Four of the eight are that single mistake.
+
+**A ninth, found 2026-10-22 while building a pitch deck from these numbers.** "75 to 100% of
+squared error is in blackouts or recovery" was published in the README and repeated in
+CLAUDE.md (twice), the handoff, the new-session prompt, a code comment in `fusioncore.hpp`,
+this file (twice) and two memory files. Neither table supports the upper bound. Outage plus
+recovery, computed from both the first budget table and the pinned-reference table:
+
+    2012-02-04  94.5%   2012-06-15  84.6%   2012-08-20  96.8%
+    2012-09-28  85.8% (86.5% unpinned)      2013-04-05  74.8%
+
+So the range is **74.8% to 96.8%**. The lower bound was derived as 100 minus the largest
+steady share (25.2%), and the upper bound should have been 100 minus the smallest (3.2%),
+not 100. Corrected in all ten places in one change, which is the pattern above applied
+rather than described. The conclusion is untouched: steady coverage is a small minority of
+the error on every sequence.

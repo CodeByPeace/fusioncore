@@ -276,7 +276,7 @@ FusionCore against robot_localization on the [NCLT dataset](http://robots.engin.
 >
 > **Where the error actually was.** Classifying each sequence by whether a GNSS fix was
 > available, using windows taken from the raw fix stream so the classification does not
-> depend on the thing being measured, 75% to 100% of squared error sat in the blackouts or
+> depend on the thing being measured, 74.8% to 96.8% of squared error sat in the blackouts or
 > in the re-convergence right after them. On 2012-02-04, 44.5% of the run was spent
 > re-converging and that window held 94.5% of the error.
 >

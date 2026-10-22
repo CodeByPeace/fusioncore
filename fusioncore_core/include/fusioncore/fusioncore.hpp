@@ -649,7 +649,7 @@ struct FusionCoreConfig {
 
   // ── Re-anchoring after a blackout ───────────────────────────────────────────
   //
-  // Measured 2026-10-18 on NCLT: 74.8% to 100% of the error on every sequence is
+  // Measured 2026-10-18 on NCLT: 74.8% to 96.8% of the error on every sequence is
   // in GNSS gaps or the recovery after them, and steady coverage never exceeds
   // 25.2%. Inside the recovery windows the gate rejects 81.0% and 81.2% of fixes
   // against 10.4% and 10.6% over the whole run, with a median mahalanobis of
