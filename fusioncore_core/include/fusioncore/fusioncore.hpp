@@ -599,6 +599,12 @@ struct FusionCoreConfig {
   // Scale = 1000: encoder provides ~96% (essentially RL behavior for heading).
   // 1.0 = disabled (default). Suggested: 500.0 for deployments with long GPS outages.
   double gnss_coast_imu_wz_scale = 1.0;
+  // Multiplier applied to R_encoder[WZ] during GPS coast mode, the mirror of
+  // gnss_coast_imu_wz_scale: large values leave heading rate to the gyro (pair it
+  // with gnss_coast_imu_wz_scale = 1). 1.0 = disabled. Experimental and not exposed
+  // as a ROS parameter: on NCLT it helped four sequences and cost 2013-04-05 65%,
+  // see tools/benchmark_regression.md 2026-10-22, the coast variant.
+  double gnss_coast_encoder_wz_scale = 1.0;
   // Also enter coast mode when GPS has been absent for this many seconds.
   // Handles GPS outages where the receiver stops publishing entirely (mode=2,
   // power loss, tunnel) rather than publishing fixes that fail the chi2 gate.

@@ -2254,3 +2254,115 @@ steady share (25.2%), and the upper bound should have been 100 minus the smalles
 not 100. Corrected in all ten places in one change, which is the pattern above applied
 rather than described. The conclusion is untouched: steady coverage is a small minority of
 the error on every sequence.
+
+## 2026-10-22  The coast variant: the premise was weaker than it looked, and two real findings instead
+
+Queued item 1 from the handoff. During a coast, take speed only from the wheels and heading
+only from the gyro, because dead reckoning anchored at the filter's heading beat the coast on
+both scorable gaps (336 against 425 m, 132 against 154 m). Predictions were written first, in
+`tools/repro/coast_variant_predictions.md`.
+
+### Method
+
+Two coast-only R multipliers were added, default 1.0: one on the accelerometer rows of R_imu,
+one on R_encoder[WZ] (the mirror of the existing `gnss.coast_imu_wz_scale`). Replay with both
+at default reproduces `arm_2012-06-15_baseline.tum` BYTE FOR BYTE (md5 ac7a622b...), so the
+rebuilt tool changes nothing until asked. Arms, shipped NCLT config, re-anchoring OFF so the
+coast is the recorded one:
+
+    base   as shipped (coast_imu_wz_scale 500: heading mostly from the encoder)
+    qb1    gnss.coast_q_bias_factor 1 instead of 100
+    H      heading from the gyro: coast_imu_wz_scale 1, coast_encoder_wz_scale 1e6
+
+### The accelerometer half cannot be tested this way, and the knob is removed
+
+Inflating R on the accelerometer rows does not take speed from the wheels. Those rows also
+carry gravity, which is what keeps roll and pitch observable, so dropping them breaks the
+state: on the synthetic every seed went to 272% to 6682% of distance travelled. **So the
+accelerometer hypothesis is UNTESTED, not falsified.** Testing it properly needs a structural
+change (hold AX at zero during coast while keeping the gravity rows), not an R scale. The knob
+was removed rather than left in the config as a trap.
+
+### Synthetic: tools/repro/coast_variant.cpp
+
+Turning, speed-varying truth, 120 s of 1 Hz GNSS then a 300 s gap. Gyro bias 0.005 rad/s,
+accelerometer bias 0.05 m/s^2, encoder speed scale 2%, encoder WZ scale 5% plus 0.002 rad/s
+bias, signs random per seed. 10 seeds. Error is displacement error over the gap as % of
+distance:
+
+    arm                  err mean   err med    path (full rate / true)
+    base                   47.189    36.530    35.541
+    H gyro heading         65.353    68.367    31.495
+    qb1                    12.618    14.344     4.154
+    q_pos 1                45.381    35.055    35.557
+    DR gyro @filter yaw    10.331     9.845
+    DR enc  @filter yaw     8.351     7.966
+
+On the synthetic the 100x gyro-bias Q inflation is the whole story and the position Q
+inflation is nothing. **NCLT does not agree, see below, so the synthetic is not a predictor
+for qb1.**
+
+### NCLT, whole run
+
+ATE RMSE 3D (m), replay, all three columns re-scored through `hardware/ate_tum.py` (matches
+evo to three decimals). These baseline figures differ from the 2026-10-18 table (78.428
+against 78.139 on 2012-06-15) because that table came from a scorer that is no longer on disk;
+nothing below is compared against it.
+
+    sequence      base       qb1                H
+    2012-02-04   142.043   162.936 (+14.7%)   140.115 (-1.4%)
+    2012-06-15    78.428    66.009 (-15.8%)    62.676 (-20.1%)
+    2012-08-20   165.364   159.604  (-3.5%)   142.761 (-13.7%)
+    2012-09-28    22.805    22.533  (-1.2%)    19.822 (-13.1%)
+    2013-04-05    16.456    16.496  (+0.2%)    27.163 (+65.1%)
+
+**Neither arm is a no-regression change, so neither default moves.**
+
+### NCLT, inside the gaps
+
+`gap_deadreckon.py`, the two scorable gaps (truth covers 60% and 31% of them):
+
+    gap                    base    qb1      H
+    2012-06-15, 462 s     425.3   404.3   300.3   m at window exit
+    2013-04-05, 275 s     153.6   110.8    31.0
+
+H is better on both scorable gaps, by a lot on the second. But `blackout_budget.py` over every
+gap with truth on 2013-04-05 (ref 5.822) says the gap-window RMSE goes 96.844 to **187.253**
+under H: gyro heading rescued the one long gap and made the shorter ones worse. On 2012-06-15
+(ref 5.059) the gap RMSE goes 243.866 to 194.033 (H) and 202.135 (qb1).
+
+### The premise of this item was weaker than it looked
+
+The dead-reckoning rows are NOT a fixed reference. `gyro @filter yaw` on 2012-06-15 reads
+411.1 m under base and **32.7 m** under H, on identical sensor data. Each arm's dead reckoning
+is anchored at THAT ARM's heading at window entry, and on 2012-06-15 window entry is 185 s into
+the gap (the truth hole), so the anchor already carries 185 s of the coast being judged. "Dead
+reckoning beats the coast" was therefore never independent of the coast. It should not be
+quoted as evidence that the coast adds drift.
+
+### A real defect found on the way: the fused position jitters, twice as much in coast
+
+The synthetic's path length ratio of 35 prompted a check on real data. ate_tum's path ratio is
+taken at ground-truth timestamps and cannot see this. At the filter's full output rate,
+2012-06-15, three 462 s windows on the shipped baseline:
+
+    window               fixes  full-rate path / 1 Hz path   full-rate path / wheel path
+    before gap, GPS on    1737        1.27                        1.40
+    inside the gap           2        2.46                        1.97
+    after gap, GPS on      450        1.36                        1.33
+
+The fused position oscillates at output rate all the time, and roughly twice as much while
+coasting: 1073.0 m of fused path inside the gap against 543.9 m of wheel odometry. qb1 makes
+it worse on real data (3.61) though it helped on the synthetic. A consumer that differentiates
+pose (a controller, an odometry integrator) sees this directly. Not fixed; filed here.
+
+### Prediction scorecard
+
+    P1  accel out moves coast toward enc DR        UNTESTABLE with an R scale, knob removed
+    P2  variant not uniform, heading source decides CONFIRMED: H -20.1% to +65.1% by sequence
+    P3  nothing below ~89% of distance              FALSIFIED: H reached 79.5% and 27.0%
+    P4  accel out beats base on the synthetic       NOT TESTED VALIDLY, same reason as P1
+
+Provenance for every NCLT number: pipeline replay, config nclt_shipped (reanchor off) plus the
+named arm keys, scoring points full_traj (ate_tum) or gaps (gap_deadreckon, blackout_budget),
+coverage 100% of each sequence for full_traj.

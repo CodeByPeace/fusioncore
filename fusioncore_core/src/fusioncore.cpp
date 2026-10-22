@@ -1386,6 +1386,8 @@ void FusionCore::update_encoder(
   if (var_vx > 0.0) R(0,0) = var_vx;
   if (var_vy > 0.0) R(1,1) = var_vy;
   if (var_wz > 0.0) R(2,2) = var_wz;
+  if (gnss_in_coast_ && config_.gnss_coast_encoder_wz_scale > 1.0)
+    R(2,2) *= config_.gnss_coast_encoder_wz_scale;
 
   // Mahalanobis outlier rejection for encoder
   if (config_.outlier_rejection) {
