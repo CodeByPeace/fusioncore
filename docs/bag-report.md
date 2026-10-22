@@ -69,8 +69,8 @@ BLOCKER: The robot never turned both ways
 
 A constant gyro bias and a constant yaw rate are indistinguishable until you turn
 **both** directions. Without a reversal the pair slides along `WZ + B_GZ = const` at
-zero measurement cost, measured at a correlation of -0.998 in this project's own
-tests. No amount of tuning fixes a heading problem in that data, because the data does
+zero measurement cost, measured at a correlation of -0.998 on an in-place spin in this
+project's own tests (on NCLT, which drives both directions, it measured -0.63 to -0.04). No amount of tuning fixes a heading problem in that data, because the data does
 not contain the information.
 
 See [Observability](observability.md) for the manoeuvres and why each one works.

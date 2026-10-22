@@ -1933,7 +1933,7 @@ about 0.1 deg of secular drift. That is queued behind the node runs.
 (`HeadingSource::IMU_ORIENTATION`). The comment there asserted that "9-axis IMUs with
 magnetometer give true heading". **They do not. They give magnetic heading.**
 
-`mag.declination_rad` exists and is applied in exactly ONE place: `magnetometer.hpp`,
+`magnetometer.declination_rad` exists and is applied in exactly ONE place: `sensors/magnetometer.hpp`,
 computing yaw from a raw magnetic field. Counted: `fusioncore.cpp` contains zero
 references to declination. So on the IMU-orientation path nothing applies it, and a
 user with a 9-axis IMU and a true-north map carries the local declination as a constant

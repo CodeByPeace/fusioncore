@@ -23,7 +23,8 @@ fusioncore:
     #
     # The accelerometer measures AX + B_AX + gravity. One equation, three unknowns,
     # and the literature is explicit that accel bias is completely unobservable in
-    # straight motion. The filter was estimating all three and r(WZ,B_GZ) hit -0.998.
+    # straight motion. The filter was estimating all three; r(WZ,B_GZ) reaches -0.998 on a
+    # synthetic in-place spin (test_observability.cpp), -0.63 to -0.04 on NCLT.
     ukf.q_acceleration:     0.0
     ukf.q_accel_bias:       0.0
     ukf.q_gyro_bias:        0.0

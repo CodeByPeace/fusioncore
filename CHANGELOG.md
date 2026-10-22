@@ -14,9 +14,27 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   values `general` (the default, which changes nothing), `ground_robot` and
   `ground_robot_flat`. A 23-state filter can estimate more than a wheeled robot can
   observe: the gyro measures `WZ + B_GZ` and the accelerometer measures
-  `AX + B_AX + gravity`, so those pairs are not separately observable, and estimating
-  them anyway costs accuracy (measured `r(WZ, B_GZ) = -0.998`). On a robot with encoders
-  the encoder measures yaw rate with no bias term and carries the constraint instead.
+  `AX + B_AX + gravity`, so those pairs are not separately observable from those sensors
+  alone. On a robot with encoders, `ground_robot` freezes the biases and treats the
+  encoder's yaw rate as bias-free, so the encoder carries the constraint. Measured in
+  replay, frozen against free, scored through `hardware/ate_tum.py` (the median is worse
+  on 2013-04-05, 7.010 to 7.082, and better on the other four):
+
+  ```
+    replay, ATE RMSE 3D (m), shipped NCLT config, only the seven profile keys differ
+    sequence      free      ground_robot   change
+    2012-02-04   142.043     141.595       -0.3%
+    2012-06-15    78.428      64.537      -17.7%
+    2012-08-20   165.364     141.195      -14.6%
+    2012-09-28    22.805      21.560       -5.5%
+    2013-04-05    16.456      15.168       -7.8%
+  ```
+
+  An earlier version of this entry justified the change with `r(WZ, B_GZ) = -0.998`. That
+  figure is real but comes from a 1.8 s in-place spin in `test_observability.cpp`, not from
+  a robot driving on real data; on NCLT the same correlation measured -0.63 to -0.04, so it
+  does not support this change and was removed. It also said the encoder measures yaw rate
+  with no bias term; the model carries an encoder yaw-rate bias, which the profile freezes.
 
   Measured on NCLT at 1x, with the robot_localization control on the same run shown
   because it reads the same input and runs none of this code:

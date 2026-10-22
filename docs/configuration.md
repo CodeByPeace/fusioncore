@@ -856,7 +856,9 @@ observed from the sensors on a wheeled robot:
 | `WZ + B_GZ` (gyro) | both separately | one equation, two unknowns |
 | `AX + B_AX + gravity` (accel) | all three | one equation, three unknowns |
 
-Measured on FusionCore, `r(WZ, B_GZ) = -0.998`. The pair slides along an unobservable
+Measured on a 1.8 s in-place spin in `test_observability.cpp`, `r(WZ, B_GZ) = -0.998`. On
+NCLT with encoders the same correlation measured -0.63 to -0.04, so real driving locks the
+pair far less than that synthetic does. Where it is locked, the pair slides along an unobservable
 line at no measurement cost: the sum stays correct, so nothing objects, and anything
 integrating `WZ` on its own inherits the whole error. The literature agrees
 independently, that accelerometer bias is completely unobservable in straight motion

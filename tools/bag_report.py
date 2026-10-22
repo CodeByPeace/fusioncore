@@ -476,7 +476,7 @@ def check_observability(series):
             f"Only {still} of {len(odom)} samples had the platform still.",
             "The gyro reports rate + bias, so any split of the two fits it equally "
             "and the pair slides at zero measurement cost. Measured at a correlation "
-            "of -0.998. Stopping is the only thing that breaks it, because a "
+            "of -0.998 on a synthetic in-place spin. Stopping is the only thing that breaks it, because a "
             "zero-velocity update asserts the rate is zero with no bias term, which "
             "turns the gyro reading into a direct measurement of the bias. Measured: "
             "without a stop, yaw integrates at 85% of truth; after a two-second "

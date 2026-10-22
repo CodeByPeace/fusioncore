@@ -3,9 +3,9 @@
 The variant: during a GNSS coast, take speed only from the wheels and heading only
 from the gyro. Built as two coast-only R multipliers, default 1.0:
 
-- `gnss.coast_imu_accel_scale`: multiplies R_imu on the three accelerometer rows.
+- `gnss_coast_imu_accel_scale` (core field, removed): multiplies R_imu on the three accelerometer rows.
   Large means the accelerometer stops steering AX, so VX follows the encoder.
-- `gnss.coast_encoder_wz_scale`: multiplies R_encoder on the WZ row. Large means
+- `gnss_coast_encoder_wz_scale` (core field): multiplies R_encoder on the WZ row. Large means
   heading rate comes from the gyro. Must be paired with `gnss.coast_imu_wz_scale: 1`,
   because the NCLT config sets 500 there, which sidelines the gyro in coast.
 

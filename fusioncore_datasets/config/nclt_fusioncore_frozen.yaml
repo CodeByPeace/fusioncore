@@ -8,7 +8,8 @@
 # constraint, which measured better on NCLT on 2026-10-13.
 #
 # WHY. Three of FusionCore's open defects are the same defect: more states than
-# measurements. WZ and B_GZ are unobservable as a pair at r = -0.998. AX and B_AX are
+# measurements. WZ and B_GZ are unobservable as a pair (r = -0.998 on a synthetic in-place spin in test_observability.cpp; on NCLT with encoders it measured -0.63 to -0.04).
+# AX and B_AX are
 # unobservable as a pair. B_EWZ is a third unknown on an equation that already had
 # two. robot_localization wins the sequences it wins in 2D mode, which structurally
 # refuses to estimate these quantities at all.
@@ -45,7 +46,8 @@
 # The literature says the same thing: accelerometer bias is completely unobservable in
 # straight motion, and for land vehicles the azimuth and its gyro bias are unobservable
 # in straight motion and under constant acceleration. FusionCore estimates all of them
-# anyway, and r(WZ, B_GZ) = -0.998 is what that costs.
+# anyway. r(WZ, B_GZ) reaches -0.998 on a synthetic in-place spin (test_observability.cpp);
+# on NCLT with encoders it measured -0.63 to -0.04.
 #
 # TREAT THE SYNTHETIC WITH SUSPICION ANYWAY. On 2026-10-13 the same kind of synthetic
 # predicted a 39.5% gain from the Z constraint on one seed, which fell to 3 of 8 seeds

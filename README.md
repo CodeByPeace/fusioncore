@@ -31,9 +31,10 @@ fusioncore:
 
 A 23-state filter can estimate more than a wheeled robot can observe. The gyro measures
 `WZ + B_GZ` and the accelerometer measures `AX + B_AX + gravity`, so those pairs are not
-separately observable, and estimating them anyway costs accuracy: measured
-`r(WZ, B_GZ) = -0.998`. On a robot with encoders you do not need to, because the encoder
-measures yaw rate with no bias term and carries the constraint instead. Declaring the
+separately observable from those sensors alone. On a robot with encoders,
+`platform.profile: ground_robot` freezes the biases and treats the encoder's yaw rate as
+bias-free, so the encoder carries the constraint. In replay on five NCLT sequences that
+lowered ATE RMSE on all five, by 0.3% to 17.7% (table in the CHANGELOG). Declaring the
 platform is what lets the filter stop guessing. See
 [Declaring the platform](https://manankharwar.github.io/fusioncore/configuration/#declaring-the-platform).
 

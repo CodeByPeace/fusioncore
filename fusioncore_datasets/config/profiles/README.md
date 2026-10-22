@@ -19,7 +19,9 @@ eight are where three of its open defects live:
 | acceleration `AX,AY,AZ` | 3 | accel measures `AX + B_AX + gravity`: one equation, three unknowns |
 | encoder yaw bias `B_EWZ` | 1 | a third unknown on an equation that already had two |
 
-Measured on FusionCore: `r(WZ, B_GZ) = -0.998`. The pair slides along an unobservable
+Measured on a 1.8 s in-place spin in `test_observability.cpp`: `r(WZ, B_GZ) = -0.998`. On
+NCLT with encoders the same correlation measured -0.63 to -0.04, so real driving locks the
+pair far less than that synthetic does. Where it is locked, the pair slides along an unobservable
 line at zero measurement cost, and anything integrating `WZ` alone inherits the error.
 That is the 81.6% yaw and 80.7% position figures in issue #150.
 

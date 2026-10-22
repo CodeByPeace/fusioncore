@@ -706,7 +706,8 @@ public:
     // observe its accelerometer bias in straight motion and does not need to: the
     // encoder measures body velocity directly and carries the constraint instead.
     // Estimating it anyway costs accuracy, because WZ and B_GZ then slide along an
-    // unobservable line at r = -0.998 and anything integrating WZ alone inherits
+    // unobservable line (r = -0.998 on a synthetic in-place spin, -0.63 to -0.04 on
+    // NCLT) and anything integrating WZ alone inherits
     // the error.
     //
     //   general           estimate everything. Correct for drones, boats, handhelds,
