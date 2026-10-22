@@ -2105,3 +2105,72 @@ still goes in, because a silent drop is a defect whatever its size, and because 
 prediction deserves a real test rather than quiet abandonment. But it drops down the
 priority list, and the honest reason is that the number it was meant to explain was
 measured wrong.
+
+## 2026-10-22  Node A/B confirms re-anchoring reaches a deployment, and the sweep clears the shipping config
+
+Both node arms completed on 2026-10-19 (the session that launched them ended before the
+results were read). 2012-09-28, 1x, two configs differing by one line, both unstarved:
+
+    arm   ATE_3D   ATE_XY   path_ratio   drift_m/km     Hz   re-anchors
+    off   18.625   15.661       0.8151         2.58  102.6            0
+    on     9.996    6.446       0.8161         1.39  102.4            2
+
+**1.86x through the ROS node**, which is the verification that was missing: the fix was
+measured on replay and, until 2026-10-18, no deployment could even switch it on. Drift
+2.58 to 1.39 m/km. The two events logged jumps of 157.98 m and 25.15 m through the WARN
+line and `/fusion/debug/gnss_status`, so the diagnostic path works too.
+
+`node on` 9.996 against `replay on` 10.008 agree to **0.12%**. On the off arm they do not
+(18.625 against 23.638), which is the pipeline disagreement from the previous section, and
+it is worth noting the two pipelines converge once the filter stops having excursions.
+
+Path ratio barely moves here, 0.8151 to 0.8161, where replay on this sequence went 1.048
+to 1.106. So the path-distortion cost recorded earlier is pipeline-dependent and not a
+property of the feature.
+
+The RL control read 91.648 and 82.190 across the two runs, an 11.5% spread, independently
+reproducing the 11.05% recorded for this sequence. Both arms also reproduce their own
+pipeline: the off arm landed 0.17% from the 18.594 on record.
+
+### The shipping config is not bimodal
+
+`ukf.q_angular_vel` swept 12 values on 2013-04-05 with the attitude flag OFF, which is the
+shipping configuration, re-anchor off and on:
+
+                 q |   RMSE_off   path_off |    RMSE_on    path_on   ev
+              1e-5 |     18.919      0.984 |     18.341      0.981    3
+              1e-4 |     29.284      0.966 |     28.846      0.964    3
+             0.001 |     13.387      0.987 |     12.522      0.985    3
+            0.0015 |     15.243      0.990 |     14.500      0.988    3
+             0.002 |     15.261      0.993 |     14.521      0.990    3
+             0.003 |     16.363      0.997 |     15.682      0.994    3
+             0.004 |     18.294      0.997 |     17.691      0.994    3
+             0.005 |     18.493      0.997 |     17.898      0.994    3
+            0.0065 |     18.312      0.997 |     17.710      0.995    3
+             0.008 |     17.602      0.998 |     16.986      0.996    3
+              0.01 |     17.443      1.000 |     16.823      0.997    3
+               0.1 |     16.677      1.019 |     16.011      1.016    3
+
+Every path ratio is between 0.96 and 1.02. **There is no second basin.** With the attitude
+flag ON the same sweep is sharply bimodal, every run either about 1.0 or about 0.17, and
+re-anchoring does not remove that and flips basins in both directions. So **the bistability
+is an attitude-flag-ON artifact**, the flag is off by default and already known to be 3.8x
+worse on real data, and the question parks.
+
+Re-anchoring also improves RMSE at every single q, by 2 to 6%, and fires 3 times
+regardless. That consistency across a swept process noise is the robustness evidence the
+feature needed and did not have.
+
+### One row of that table was invalid and nearly got published
+
+q=0.005 with re-anchoring on first read **5.391 m with 0 events**, which is self-
+contradictory: zero events must mean a no-op. Its trajectory was **50146 lines against
+662658** for every neighbour, and its log was 0 bytes. It was killed mid-flight when the
+sweep was stopped to free the CPU for the node runs, and the resume guard in my own
+driver, `[ -s "$out" ] && continue`, treats a non-empty truncated file as complete, so it
+was skipped rather than redone. Re-run properly it gives **17.898**, path 0.994, 3 events,
+in line with its neighbours at 17.691 and 17.710.
+
+Same class as the 2012-01-08 66%-coverage withdrawal: a partial run scores well precisely
+because it covers the easy part. **Any resume guard has to check completeness, not
+emptiness.**
