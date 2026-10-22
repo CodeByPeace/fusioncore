@@ -605,6 +605,12 @@ struct FusionCoreConfig {
   // as a ROS parameter: on NCLT it helped four sequences and cost 2013-04-05 65%,
   // see tools/benchmark_regression.md 2026-10-22, the coast variant.
   double gnss_coast_encoder_wz_scale = 1.0;
+  // During GPS coast, after each IMU update, hold the three body acceleration states
+  // at zero with this 1-sigma (m/s^2), so speed comes from the wheels rather than from
+  // integrating acceleration. The IMU's accelerometer rows still run, so gravity keeps
+  // roll and pitch observable; only AX/AY/AZ are pinned. 0 = disabled. Experimental,
+  // replay-only: see tools/benchmark_regression.md 2026-10-22.
+  double gnss_coast_hold_accel_sigma = 0.0;
   // Also enter coast mode when GPS has been absent for this many seconds.
   // Handles GPS outages where the receiver stops publishing entirely (mode=2,
   // power loss, tunnel) rather than publishing fixes that fail the chi2 gate.
@@ -1235,6 +1241,11 @@ public:
   // Diagnostic passthrough: metres the last measurement update moved position.
   // See UKF::last_position_correction().
   double last_position_correction() const { return ukf_.last_position_correction(); }
+  // Diagnostics only: run the predict step up to t with no measurement, so the
+  // update that follows at the same t predicts nothing and its position change is
+  // the update's alone. hardware/replay.cpp uses it to split motion into predict
+  // and update; replay with it on is byte-identical to replay without it.
+  void predict_only(double t) { predict_to(t); }
   FusionCoreStatus   get_status()     const;
 
   // Per-outcome tallies, indexed by static_cast<int>(the reason enum).

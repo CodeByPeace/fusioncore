@@ -26,7 +26,7 @@
 #include "fusioncore/fusioncore.hpp"
 using namespace fusioncore;
 
-struct Arm { const char* name; double imu_wz, enc_wz, q_bias = 100.0, q_pos = 10.0; };
+struct Arm { const char* name; double imu_wz, enc_wz, q_bias = 100.0, q_pos = 10.0, hold = 0.0; };
 
 struct Errors {
   double gyro_bias, accel_bias_x, accel_bias_y, enc_scale, enc_wz_scale, enc_wz_bias;
@@ -62,6 +62,7 @@ static Result run(const Arm& arm, const Errors& e, unsigned seed) {
   cfg.gnss_coast_q_bias_factor = arm.q_bias;
   cfg.gnss_coast_imu_wz_scale = arm.imu_wz;
   cfg.gnss_coast_encoder_wz_scale = arm.enc_wz;
+  cfg.gnss_coast_hold_accel_sigma = arm.hold;
 
   FusionCore fc(cfg);
   fc.init(State{}, 0.0);
@@ -146,6 +147,8 @@ int main(int argc, char** argv) {
     {"q_bias 1",        500.0, 1.0, 1.0},          // no 100x gyro-bias Q in coast
     {"q_pos 1",         500.0, 1.0, 100.0, 1.0},   // no 10x position Q in coast
     {"q_bias 1, q_pos 1", 500.0, 1.0, 1.0, 1.0},
+    {"hold accel 0.01",   500.0, 1.0, 100.0, 10.0, 0.01},  // AX/AY/AZ held at zero in coast
+    {"hold accel 0.1",    500.0, 1.0, 100.0, 10.0, 0.1},
   };
 
   std::printf("  %d seeds, %.0f s gap after %.0f s of 1 Hz GNSS. accel bias %.3f m/s^2,"

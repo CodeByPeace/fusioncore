@@ -201,6 +201,36 @@ TEST(FusionCoreTest, NineAxisIMUYawFusedNormally) {
   EXPECT_GT(fc.get_state().yaw(), 0.3);
 }
 
+// ─── Test 8b: a 9-axis yaw is converted from magnetic to true north ─────────
+// A 9-axis IMU reports yaw from MAGNETIC east. With mag.declination_rad = D (east
+// positive) the filter must settle on yaw - D, and at the default D = 0 exactly on
+// the IMU's yaw. Before 2026-10-22 declination was ignored on this path entirely.
+static double settled_yaw(double imu_yaw, double declination) {
+  FusionCoreConfig config;
+  config.imu_has_magnetometer = true;
+  config.adaptive_imu = false;
+  config.mag.declination_rad = declination;
+  FusionCore fc(config);
+  State initial;
+  initial.P = StateMatrix::Identity() * 0.1;
+  fc.init(initial, 0.0);
+  for (int i = 1; i <= 3000; ++i) {
+    fc.update_imu_orientation(i * 0.01, 0.0, 0.0, imu_yaw, nullptr);
+  }
+  return fc.get_state().yaw();
+}
+
+TEST(FusionCoreTest, NineAxisYawCorrectedForDeclination) {
+  // The property is the OFFSET: declination shifts the settled yaw by exactly -D.
+  // Measured against the D = 0 run so the filter's own settling residual cancels.
+  // That residual is about 0.014 rad above a constant 0.5 rad IMU yaw after 30 s
+  // with no other sensor, on the unchanged D = 0 path, so it is not this fix.
+  const double base = settled_yaw(0.5, 0.0);
+  EXPECT_NEAR(base, 0.5, 0.02);
+  EXPECT_NEAR(settled_yaw(0.5, 0.2) - base, -0.2, 0.005);
+  EXPECT_NEAR(settled_yaw(0.5, -0.15) - base, 0.15, 0.005);
+}
+
 // ─── Test 9: a backward time jump must not crash the filter ──────────────────
 // A large backward timestamp jump (clock reset, out-of-order timestamps, or
 // bag-replay clock corruption) used to freeze last_timestamp_ in the future, so

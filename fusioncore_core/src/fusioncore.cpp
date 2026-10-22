@@ -1112,6 +1112,15 @@ void FusionCore::update_imu(
   // Track innovation for adaptive noise estimation
   adapt_R<sensors::IMU_DIM>(R_imu_, R_imu_floor_, imu_innovations_, innovation, config_.adaptive_imu);
 
+  if (gnss_in_coast_ && config_.gnss_coast_hold_accel_sigma > 0.0) {
+    const Eigen::Matrix<double, 3, 1> z_zero = Eigen::Matrix<double, 3, 1>::Zero();
+    const double s2 = config_.gnss_coast_hold_accel_sigma * config_.gnss_coast_hold_accel_sigma;
+    const Eigen::Matrix<double, 3, 3> R_hold = Eigen::Matrix<double, 3, 3>::Identity() * s2;
+    ukf_.update<3>(z_zero, [](const StateVector& x) {
+      Eigen::Matrix<double, 3, 1> h; h << x[AX], x[AY], x[AZ]; return h;
+    }, R_hold);
+  }
+
   // Save snapshot for delay compensation
   save_snapshot();
 
@@ -1212,6 +1221,14 @@ void FusionCore::update_imu_orientation(
   z[0] = roll;
   z[1] = pitch;
   z[2] = yaw;
+  // A 9-axis IMU's yaw is referenced to MAGNETIC north. Convert it to true north
+  // with the same convention as the raw-field path in magnetometer.hpp: subtract
+  // the east-positive declination. A 6-axis yaw is never used as heading, so it is
+  // left alone.
+  if (config_.imu_has_magnetometer && config_.mag.declination_rad != 0.0) {
+    const double y = yaw - config_.mag.declination_rad;
+    z[2] = std::atan2(std::sin(y), std::cos(y));
+  }
 
   sensors::ImuOrientationParams fallback;
 
@@ -1297,10 +1314,10 @@ void FusionCore::update_imu_orientation(
   // magnetic-referenced, so a user with a 9-axis IMU and a true-north map carries
   // the declination as heading bias with nothing saying so.
   //
-  // Not fixed in this commit because it is a behaviour change that needs its own
-  // test. What already exists and would surface it: the heading_vs_track_deg
-  // cross-check on /fusion/debug/gnss_status, whose own documentation names
-  // declination as a cause of an offset that stays constant across headings.
+  // FIXED 2026-10-22: update_imu_orientation now subtracts mag.declination_rad from
+  // the IMU's yaw when has_magnetometer is true (test: NineAxisYawCorrectedFor
+  // Declination). At the default 0.0 nothing changes. The heading_vs_track_deg
+  // cross-check on /fusion/debug/gnss_status still surfaces a wrong value.
   //
   // No NCLT result is affected: that config sets imu.has_magnetometer false and
   // takes yaw from GPS track only, so this branch never runs there.

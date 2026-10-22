@@ -2366,3 +2366,121 @@ pose (a controller, an odometry integrator) sees this directly. Not fixed; filed
 Provenance for every NCLT number: pipeline replay, config nclt_shipped (reanchor off) plus the
 named arm keys, scoring points full_traj (ate_tum) or gaps (gap_deadreckon, blackout_budget),
 coverage 100% of each sequence for full_traj.
+
+## 2026-10-22  The jitter located, 2013-04-05's gaps explained in part, the accel hold, and declination
+
+### 1. Where the output-rate jitter comes from
+
+`hardware/replay.cpp attrib=` now splits every IMU and ENC event's position change into
+the predict and the update that follows, by running the predict first through a new
+diagnostics-only `FusionCore::predict_only(t)`. Replay with attribution on is BYTE
+IDENTICAL to replay without it (md5 ac7a622b... on 2012-06-15), so the split is exact and
+does not perturb the filter. `tools/jitter_attrib.py` reads it.
+
+2012-06-15, shipped config, inside the 462 s gap:
+
+    source            path m    net m   path/net   mean |step| mm
+    predict            379.3    263.3     1.44         5.333
+    IMU update         212.8     18.6    11.42         9.835
+    ENC update         625.2     19.5    32.13        12.633
+    combined output   1072.9    247.5
+
+**The jitter is measurement updates, not prediction.** Velocity-type updates should barely
+move position; inside the gap each encoder update moves it 12.6 mm, against 2.3 mm with GNSS
+present. The kicks grow with time since the last fix (0.5 mm in the first 30 s, 10.5 mm by
+60 to 90 s, ~17 mm after 200 s) and are mostly sideways (53 to 86%).
+
+**The prediction "two sources take turns pulling in opposite directions" is NOT confirmed.**
+Adjacent IMU and ENC updates point the same way more often than not (median cos +0.381,
+47.7% aligned against 34.9% opposed), and gyro and encoder yaw rate agree inside this gap
+(corr +0.779).
+
+Ruled out, each by re-running the attribution with one thing changed (combined in-gap path):
+
+    coast position Q 10x -> 1           1073.7   no change
+    coast gyro sidelining 500 -> 1      1072.7   no change
+    coast gyro-bias Q 100x -> 1         1657.1   worse
+    q_angular_vel 0.1 -> 0.01, 0.001    1036.0, 1143.3   no better (WZ wobble fell 0.0226 to 0.0085 rad/s)
+    every yaw-rate measurement off      1111.7   no change: the kicks do not come through WZ
+
+What DOES move it:
+
+    motion_model DifferentialDrive      698.7   ENC kicks 625.2 -> 287.7
+    acceleration held at zero in coast  671.6   ENC kicks 625.2 -> 128.6
+
+So the encoder kicks travel through the position cross-covariance with the free LATERAL
+VELOCITY and ACCELERATION states, which grows with distance travelled since the last fix.
+Neither lever is a fix: DifferentialDrive costs +7.8%, +14.4% and +17.2% ATE on three of
+five sequences, and the accel hold below is no better. The mechanism is located; the cure
+is not.
+
+A false alarm caught on the way: replay's own comment said it "hardcodes DifferentialDrive",
+which would have meant replay and node used different motion models all along. It never
+did: nothing assigned cfg.motion_model, so both ran ConstantVelocityAcceleration. The
+comment is corrected and `motion_model` is now a wired replay string parameter.
+
+**New standard metric: `output_rate_path_ratio`** in `tools/evaluate.py` (metrics.json) and
+`hardware/ate_tum.py`: the estimate's path at its full output rate over the associated span,
+over the ground-truth path. On the 2012-06-15 baseline it reads **1.228** against a
+truth-rate path ratio of 0.801. Three tests pin it, including that the old ratio cannot see
+jitter between truth samples.
+
+### 2. Why 2013-04-05's gaps hold 60.3% of its error
+
+`tools/gap_sensors.py`, per gap from the raw fix stream:
+
+    start  len s  gyro dpsi  enc dpsi  true dpsi   corr  mean(gyro-enc) rad/s
+      588     65     -72.2     -68.3        -        0.796    +0.00195
+     2103     32     -34.3     -26.3        -        0.783    -0.00433
+     2140    275    -161.4    -128.8    (partial)    0.786    -0.00260
+     3460    129    -133.6    -121.5        -        0.767    -0.00281
+     3716     55     +36.6     +43.3        -        0.784    -0.00090
+
+Over the 72 s of the 275 s gap that has heading truth (73 samples): truth -86.2 deg,
+encoder -87.4, gyro -96.7. **The encoder is right to 1.2 deg and the gyro is 10.5 deg off,
+which is a gyro bias of about -0.0026 rad/s (-0.15 deg/s) relative to both.** Not slip:
+the two sensors agree in shape (corr 0.77 to 0.80) and over the truth-covered stretches
+of that gap the wheels read 101.7 m against 97.6 m of truth (1.042). That bias is why
+gyro-only heading in coast cost this sequence +65.1%.
+
+**What it does NOT explain:** the shipped coast takes heading from the encoder, which matched
+truth, so the 60.3% of error in these gaps is still not accounted for. Open. Also noted and
+not chased: with GNSS present, a 500 s stretch reads wheels 583.2 m against truth 485.4 m
+(1.201), a larger over-read than inside the gap.
+
+### 3. The accelerometer test done properly
+
+`gnss_coast_hold_accel_sigma` (default 0, core and replay only): during coast, after each
+IMU update, a pseudo-measurement holds AX/AY/AZ at zero. The accelerometer rows still run,
+so gravity keeps roll and pitch observable, which is what the R-scale attempt broke.
+
+Synthetic (10 seeds): drift 47.189% -> 27.702% (sigma 0.1) and 35.296% (0.01), path
+inflation 35.5 -> 6.6 and 8.3. NCLT, ATE RMSE 3D, replay, ate_tum:
+
+    sequence      base      hold 0.1            hold 0.01
+    2012-02-04   142.043   157.642 (+11.0%)   158.110 (+11.3%)
+    2012-06-15    78.428    74.876  (-4.5%)    79.535  (+1.4%)
+    2012-08-20   165.364   160.684  (-2.8%)   158.199  (-4.3%)
+    2012-09-28    22.805    22.539  (-1.2%)    19.738 (-13.4%)
+    2013-04-05    16.456    29.710 (+80.5%)    33.065 (+100.9%)
+
+**Does not ship.** It cuts the in-gap jitter (1072.9 -> 671.6 m) and the output-rate path
+ratio (1.228 -> 1.173), so acceleration IS connected to the jitter, but it costs two
+sequences badly. The synthetic predicted a clean win again and was wrong again on real data.
+
+### 4. Declination: fixed, and the existing path had the sign backwards
+
+Physics: with magnetic north D east of true north, a body at true ENU yaw psi measures a
+horizontal field (sin(psi+D), cos(psi+D)), so true yaw = atan2(mx, my) - D. The raw-field
+path ADDED D, so the documented setting doubled the bias, and its unit test pinned the
+formula's output rather than the physics. Fixed to subtract, with a forward-built test over
+four declinations and four headings. The 9-axis IMU-orientation path now subtracts D too
+(it applied nothing before). Every shipped config sets 0.0, so no default changes and no
+NCLT number moves. Test `NineAxisYawCorrectedForDeclination` checks the settled offset is
+-D to 0.005 rad; it found that at D = 0 the yaw settles 0.0144 rad above a constant
+0.5 rad IMU yaw after 30 s with no other sensor, a pre-existing residual on the unchanged
+path.
+
+Provenance for every NCLT number here: pipeline replay, config nclt_shipped (reanchor off)
+plus the named keys, scoring full_traj via hardware/ate_tum.py or gaps via the tools named,
+coverage 100% of each sequence for full_traj.

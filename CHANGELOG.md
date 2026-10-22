@@ -143,6 +143,21 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **`magnetometer.declination_rad` had the wrong sign, and the 9-axis IMU path ignored
+  it.** Behaviour change for anyone who set a non-zero declination; every shipped config
+  sets 0.0, so no default changes. The raw-field path computed yaw as the magnetic angle
+  PLUS the declination. With magnetic north D east of true north, a body at true ENU yaw
+  psi measures a horizontal field of (sin(psi + D), cos(psi + D)), so the true yaw is the
+  magnetic angle MINUS D, and setting the documented value doubled the bias instead of
+  removing it. The old unit test pinned the formula's own output rather than this physics;
+  it is replaced by one that builds the field from a known true yaw and requires that yaw
+  back. Separately, with `imu.has_magnetometer: true` the IMU's orientation quaternion is
+  the heading source and its yaw is magnetic, but nothing on that path applied the
+  declination at all, so the local declination went straight into heading as a constant
+  bias. It is now subtracted there with the same convention. Tests:
+  `MagnetometerTest.DeclinationRecoversTrueYaw`,
+  `FusionCoreTest.NineAxisYawCorrectedForDeclination`.
+
 - **The GNSS Doppler bridge never compiled.** `gnss_doppler_bridge.cpp` set the
   outgoing odometry stamp from `msg->header.stamp` on a `ublox_msgs/NavPVT`, and
   NavPVT has no `std_msgs/Header` at all. Against real `ublox_msgs` the file fails
