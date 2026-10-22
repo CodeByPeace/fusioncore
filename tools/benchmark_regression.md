@@ -1410,8 +1410,32 @@ alignment and error metric the budget tool uses:
 Pinning matters. Without `--ref` the tool falls back to the fused steady median,
 which is the thing under test and changes between arms, so %time in recovery is not
 comparable across arms. The fallback prints a FALLBACK warning for exactly this
-reason. With the reference pinned, the baseline rows reproduce the 2026-10-17
-classification exactly, which is what validates the choice.
+reason.
+
+**CORRECTED 2026-10-22: "reproduce exactly" is wrong and overstated what was measured.**
+With the reference pinned, 2012-02-04 and 2012-08-20 DO reproduce the 2026-10-17
+classification exactly (94.5%/5.5% and 2.8%/94.0%/3.2%). Two do not:
+
+    sequence      2026-10-17 table        pinned table
+    2012-09-28    12.3% / 86.5% rec      8.8% / 85.8% rec
+    2013-04-05     3.4% rec, 94.9% std   3.6% rec, 94.6% std
+
+I noticed the 2012-09-28 difference when it was measured, said it came from a different
+reference, and then wrote "exactly" anyway. The correct statement is that the two
+recovery-dominated sequences reproduce, which is what the pinning was being validated
+against, and the other two shift by 0.2 to 3.5 points because the earlier table used a
+different reference. That is still evidence the choice is sound, and it is a weaker claim
+than the one made.
+
+**The two tables also use two DIFFERENT quantities under one label, "raw GNSS median."**
+2012-02-04 reads 13.817 in the fix-times table and 14.900 in the pinned-reference list;
+2012-08-20 reads 7.337 and 7.152. Neither is wrong: 13.817/7.337 come from
+`subsample_to_fix_times.py` scored with `ate_tum.py` over matched pairs, and 14.900/7.152
+come from `raw_gnss_ref.py` over ALL non-zero fixes with blackout_budget's own alignment
+and association. Two computations, one name, which is the failure this file exists to
+prevent. The pinned windows use the `raw_gnss_ref.py` values and that is the correct
+choice for them, because the budget tool must be given a reference computed with its own
+metric.
 
     sequence     arm      | gap %t  gap %e | rec %t  rec %e | std %t  std %e | rec RMSE
     2012-02-04   baseline |   0.0%    0.0% |  44.5%   94.5% |  55.5%    5.5% |  215.799
@@ -2174,3 +2198,44 @@ in line with its neighbours at 17.691 and 17.710.
 Same class as the 2012-01-08 66%-coverage withdrawal: a partial run scores well precisely
 because it covers the easy part. **Any resume guard has to check completeness, not
 emptiness.**
+
+## 2026-10-22  A fresh session audited this file and the handoff, and found eight things
+
+A new session was given `HANDOFF_20261022.md`, `CLAUDE.md` and this file, and asked to
+report contradictions. It found eight. All eight were real. Recorded because the review
+itself is the useful artifact:
+
+1. **CLAUDE.md still asserted `P(X,VX)` is 0.000** with nothing marking it withdrawn, in
+   the block that builds the whole position-versus-velocity mechanism on it. Now marked.
+2. **CLAUDE.md restated "replay 137 m vs node 194 m" in place**, one paragraph below the
+   2026-10-19 correction, so the correction did not reach the sentence making the claim.
+   Now corrected inline as well.
+3. **CLAUDE.md claimed `export_bag.py`'s projection diverges from the node's.** That is
+   falsified by THIS file: the worst disagreement anywhere on the track is 9.313e-10 m. My
+   own measurement, in my own narrative, contradicting my own instruction file, and I did
+   not catch it while writing either.
+4. **CLAUDE.md's block order is misleading.** The 2026-08-14 block sits ABOVE the
+   2026-10-17 block that says it supersedes everything "dated below", so a reader starting
+   at the top reads a superseded block first and nothing says so. A READ THIS FIRST block
+   now sits above all of them and states the order of authority is by date, not position.
+5. **The handoff said eleven `gnss.reanchor_*` parameters are declared. It is nine.**
+   Eleven was true on 2026-10-18; removing the yaw reset on 10-19 took `min_speed` and
+   `sigma_yaw` with it, and the handoff was written from the older number.
+6. **"Baseline rows reproduce the classification exactly" is false for two of four
+   sequences.** Corrected above.
+7. **Two different computations share the label "raw GNSS median"**, 13.817 against 14.900
+   on 2012-02-04. Corrected above.
+8. **The handoff's git state was stale**: 14 commits ending `317dd34`, against 16 ending
+   `ec593f2`, and its own commit list had 15 lines. It was written before the last two
+   commits and the count was wrong even for when it was written.
+
+Also noted and fixed: `2013-04-05` raw GNSS RMSE appears as 8.562 here and 8.561 in the
+README. Both are real measurements of different things, the 8.562 from the fix-times
+subsample and the 8.561 from the single-scorer rerun that the README table uses, and the
+README's is the better figure because all three of its columns go through one scorer. The
+0.001 m difference does not matter; sharing a label without saying which is which does.
+
+**The pattern across 1, 2, 3 and 4 is one thing: corrections were written in the newest
+place rather than in every place the claim lives.** A withdrawal has to chase the claim
+into the instruction file, into the paragraph that restates it, and into the document that
+summarises it. Four of the eight are that single mistake.
