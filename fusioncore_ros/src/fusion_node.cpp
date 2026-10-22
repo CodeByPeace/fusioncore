@@ -1,4 +1,5 @@
 #include <tuple>
+#include <atomic>
 #include "fusioncore/fusioncore.hpp"
 #include "fusioncore/motion_model.hpp"
 #include "fusioncore/sensors/gnss.hpp"
@@ -1246,6 +1247,31 @@ public:
 
     rclcpp::SubscriptionOptions sensor_opts;
     sensor_opts.callback_group = sensor_cb_group_;
+
+    // Ask the middleware how many messages it DROPPED, because nothing else can tell
+    // us. Every sensor subscription here uses SensorDataQoS, which is KEEP_LAST with a
+    // depth of FIVE and BEST_EFFORT delivery, and all of these callbacks share one
+    // MutuallyExclusive group, so they serialise behind a single thread. A slow GNSS
+    // update at 100 Hz IMU is enough to overflow five, and the drop is silent.
+    //
+    // This exists to settle the node-versus-replay gap: the same sequence, same commit
+    // and same data scores 137 m through the offline replay and 194 m through this
+    // node, about 40%, which is far outside the node's own 14.8% run-to-run spread.
+    // Replay reads a file and cannot drop anything. If this counter stays at zero the
+    // hypothesis is dead and the gap is arrival-order processing or predict cadence.
+    //
+    // A zero is only weak evidence though: whether the middleware reports sample-lost
+    // for a best-effort reader is an rmw implementation detail, so a zero here must be
+    // cross-checked against published-versus-consumed counts before it is believed.
+    sensor_opts.event_callbacks.message_lost_callback =
+      [this](rclcpp::QOSMessageLostInfo & info) {
+        messages_lost_.fetch_add(info.total_count_change, std::memory_order_relaxed);
+        RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 10000,
+          "middleware dropped %zu sensor message(s), %zu total. The sensor "
+          "subscriptions are BEST_EFFORT with a queue depth of 5; a drop here means "
+          "the filter never saw that measurement.",
+          info.total_count_change, info.total_count);
+      };
     // BEST_EFFORT QoS: compatible with both BEST_EFFORT and RELIABLE publishers.
     // Most hardware drivers (ublox, Septentrio, Microstrain, etc.) publish sensor
     // data as BEST_EFFORT. Using RELIABLE here silently drops all messages from
@@ -3666,6 +3692,8 @@ private:
   }
 
   long last_reanchor_count_ = 0;
+  // Written from a middleware thread, read from diagnostics, so atomic.
+  std::atomic<long> messages_lost_{0};
 
   // Extracts heading 1-sigma in degrees from the filter covariance via quaternion Jacobian.
   bool heading_announced_ = false;
@@ -3947,6 +3975,7 @@ private:
        {"heading_outliers",     std::to_string(status.hdg_outliers)},
        {"heading_last_reason",  heading_reason_str(status.heading_reason)},
        {"heading_last_chi2",    std::to_string(status.heading_chi2)},
+       {"messages_lost",        std::to_string(messages_lost_.load())},
        {"reanchors",            std::to_string(status.gnss_reanchors)},
        {"reanchor_last_jump_m",
           std::to_string(status.gnss_reanchor_last_jump_m)}}));
