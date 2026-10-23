@@ -2484,3 +2484,96 @@ path.
 Provenance for every NCLT number here: pipeline replay, config nclt_shipped (reanchor off)
 plus the named keys, scoring full_traj via hardware/ate_tum.py or gaps via the tools named,
 coverage 100% of each sequence for full_traj.
+
+## 2026-10-22  Four follow-ups: the AY constraint, the gyro bias, -0.998, and "frozen" is not frozen
+
+### The lateral-acceleration constraint makes the jitter WORSE
+
+Premise check first: the suggested fix, fuse VY = 0 as a measurement, is ALREADY SHIPPED.
+`encoder_measurement_function` carries VY and `encoder.nhc_vy_sigma` is 0.05 m/s, so the
+jitter was measured with it in place. What nothing constrains is AY, which the IMU sees only
+as AY + B_AY + gravity. So the test was the kinematic version for a no-slip wheeled robot:
+fuse AY - VX*WZ = 0 on every encoder update (`nhc_ay_sigma`, core field, replay-only).
+
+    sequence      base      AY 0.1             AY 0.5           output-rate ratio base / 0.1 / 0.5
+    2012-02-04   142.043   149.487  (+5.2%)   147.073  (+3.5%)   1.411 / 1.550 / 1.424
+    2012-06-15    78.428    77.463  (-1.2%)    43.318 (-44.8%)   1.228 / 1.388 / 1.324
+    2012-08-20   165.364   159.812  (-3.4%)   166.871  (+0.9%)   1.569 / 1.692 / 1.644
+    2012-09-28    22.805    18.595 (-18.5%)    18.880 (-17.2%)   1.361 / 1.420 / 1.357
+    2013-04-05    16.456    19.776 (+20.2%)    17.350  (+5.4%)   1.555 / 1.620 / 1.542
+
+**Prediction falsified.** In-gap fused path on 2012-06-15 rises from 1072.9 m to 1500.0 m
+and encoder kicks from 625.2 to 1122.0 m. **The -44.8% on 2012-06-15 is not an improvement:**
+across the whole 462 s gap the fused position nets 17.6 m against 255.1 m of truth
+displacement over the covered part, i.e. it churns in place (1500.5 m of path), which scores
+well on RMSE for the same reason "assert the robot never moved" would. Does not ship.
+
+### 2013-04-05 and the gyro bias
+
+The shipped filter's B_GZ is NOT near zero and NOT frozen (the NCLT config sets no profile).
+It wanders: whole-run median -0.00134 rad/s, p10 -0.03723, p90 +0.03111; inside the gaps it
+swings over about +-0.1 rad/s with sigma 0.19 to 0.38 rad/s, the 100x coast bias Q at work.
+
+Boot calibration: 2013-04-05's first ~60 s are effectively stationary (encoder speed median
+0.04 to 0.05 m/s balancing wobble, encoder yaw rate mean -0.00001 rad/s), and the gyro
+averages wx -0.00295, wy +0.00130, wz -0.00183 rad/s there. Starting replay from that bias
+(`init.gyro_bias_*`, replay-only) changes NOTHING: 16.456 against 16.456, gap RMSE 96.844
+both, because the shipped prior sigma of 0.175 rad/s forgets the start within 2 s (B_GZ is
++0.0015 in both arms by t+2 s). With gyro heading in coast it is still 27.163, identical to
+before. **Both predictions fail as stated.**
+
+Separately: the node's own `init.stationary_window` would ABORT on this start, because its
+abort fires on any single encoder sample above 0.05 m/s and the balancing Segway's p90 is
+0.087 m/s. Turning boot calibration on through the node would silently fall back to zero.
+
+What DID move 2013-04-05 is the `ground_robot` profile combined with gyro heading in coast:
+
+    2013-04-05            ATE      gap RMSE   gap share
+    shipped             16.456     96.844      60.3%
+    profile             15.168     84.884      54.5%
+    profile + gyro      12.671     57.750      36.1%   (boot bias or zero: identical)
+
+On all five (ATE RMSE 3D, replay, ate_tum, output-rate ratio):
+
+    sequence      shipped    profile    profile + gyro heading
+    2012-02-04   142.043    141.595    134.447  (-5.3%)   1.411 -> 1.224
+    2012-06-15    78.428     64.537     67.927 (-13.4%)   1.228 -> 1.078
+    2012-08-20   165.364    141.195    180.598  (+9.2%)   1.569 -> 1.416
+    2012-09-28    22.805     21.560     19.511 (-14.4%)   1.361 -> 1.187
+    2013-04-05    16.456     15.168     12.671 (-23.0%)
+
+It cuts the output-rate jitter on every sequence measured and improves four of five, but
+2012-08-20 regresses 9.2% against shipped and 27.9% against the profile alone. A candidate,
+not a default.
+
+### "Frozen" is not frozen
+
+The state dump of the profile arm shows B_GZ sigma starting at 0 and reaching 0.026 rad/s
+within 2 s; over the run its median is 0.053 rad/s (max 0.124) and the estimate's magnitude
+has median 0.0106, p90 0.0465 rad/s. The profile zeroes the bias Q and prior, but
+`UKF::generate_sigma_points` builds them from `(n+lambda)*P + 1e-6*I`, and a zero-variance
+state makes P near-singular so the identity-shift repair raises every diagonal. Core code,
+so the node does the same. The measured profile improvements stand as what the profile does;
+the word "freezes" overstates the mechanism and is corrected in the README, CHANGELOG,
+configuration.md, the profiles README and CLAUDE.md. Not fixed.
+
+### -0.998
+
+It is NOT of unknown provenance: `test_observability.cpp` asserts it, a 1.8 s in-place spin
+at 0.6 rad/s from a tight heading prior, and it still passes. What it is not is a measurement
+of an encoder robot on real data, where NCLT gave -0.6256 to -0.0370. Removed from the
+CHANGELOG and README as the justification for `platform.profile`, replaced by the
+frozen-against-free replay table re-run today with all seven profile keys applied (an
+earlier attempt silently applied only three, because the YAML args supplied the other four;
+the profile only fills defaults). Every other copy now says it is a synthetic spin.
+
+### The node-versus-replay premise, again
+
+The request called the node-versus-replay gap "137 vs 194 m" and the top priority. That
+pairing was withdrawn on 2026-10-19: on current code the node runs between 21% better and 7%
+worse than replay. The drop count was still run, because the prediction is on record. The
+node now logs consumed callbacks per sensor once a minute, since a DDS KEEP_LAST overwrite
+need not count as `messages_lost` and that counter alone could read 0 while messages are
+skipped. One real node/replay difference was noted while reading for it: the node
+initialises P as 0.1*I with position variance 1000, replay from the State default. Result
+below when the run completes.

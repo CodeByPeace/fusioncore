@@ -1832,6 +1832,7 @@ private:
 
   void imu_callback(const sensor_msgs::msg::Imu::SharedPtr msg)
   {
+    ++cb_imu_;
     double t = rclcpp::Time(msg->header.stamp).seconds();
     check_sensor_clock("IMU", t, imu_clock_checked_);
 
@@ -2276,6 +2277,7 @@ private:
 
   void encoder_callback(const nav_msgs::msg::Odometry::SharedPtr msg)
   {
+    ++cb_enc_;
     mark_sensor_received("Encoder");
     // If collecting the bias window, abort it if the robot moves.
     if (init_window_collecting_) {
@@ -2688,6 +2690,7 @@ private:
 
   void gnss_callback(const sensor_msgs::msg::NavSatFix::SharedPtr msg, int source_id = 0)
   {
+    ++cb_gnss_;
     if (source_id == 0) mark_sensor_received("GNSS");
     else                mark_sensor_received("GNSS2");
     if (!fc_->is_initialized()) return;
@@ -3695,6 +3698,12 @@ private:
   long last_reanchor_count_ = 0;
   // Written from a middleware thread, read from diagnostics, so atomic.
   std::atomic<long> messages_lost_{0};
+  // Messages that actually reached a callback, per sensor. Compared against what a
+  // publisher sent, the shortfall is what the depth-5 BEST_EFFORT queue dropped. That
+  // overwrite need not count as "lost" to the middleware, so messages_lost alone can
+  // read 0 while messages are skipped. Logged once a minute so a harness that kills
+  // the node with SIGKILL still has the last count.
+  long cb_imu_ = 0, cb_enc_ = 0, cb_gnss_ = 0;
 
   // Extracts heading 1-sigma in degrees from the filter covariance via quaternion Jacobian.
   bool heading_announced_ = false;
@@ -3969,6 +3978,9 @@ private:
       {{"outlier_count", std::to_string(status.enc_outliers)}}));
 
     // GNSS
+    RCLCPP_INFO_THROTTLE(get_logger(), *get_clock(), 60000,
+      "sensor callbacks consumed: imu %ld enc %ld gnss %ld, middleware messages_lost %ld",
+      cb_imu_, cb_enc_, cb_gnss_, messages_lost_.load());
     diag_array.status.push_back(make_status("GNSS",
       health_to_level(status.gnss_health),
       health_to_str(status.gnss_health),

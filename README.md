@@ -32,8 +32,10 @@ fusioncore:
 A 23-state filter can estimate more than a wheeled robot can observe. The gyro measures
 `WZ + B_GZ` and the accelerometer measures `AX + B_AX + gravity`, so those pairs are not
 separately observable from those sensors alone. On a robot with encoders,
-`platform.profile: ground_robot` freezes the biases and treats the encoder's yaw rate as
-bias-free, so the encoder carries the constraint. In replay on five NCLT sequences that
+`platform.profile: ground_robot` sets the bias process noises and priors to zero and
+treats the encoder's yaw rate as bias-free, so the encoder carries the constraint. It slows
+the biases rather than holding them: the UKF's covariance regularisation still lets them
+drift (a median sigma of 0.053 rad/s on the gyro bias on NCLT 2013-04-05). In replay on five NCLT sequences that
 lowered ATE RMSE on all five, by 0.3% to 17.7% (table in the CHANGELOG). Declaring the
 platform is what lets the filter stop guessing. See
 [Declaring the platform](https://manankharwar.github.io/fusioncore/configuration/#declaring-the-platform).

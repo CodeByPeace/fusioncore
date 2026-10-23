@@ -231,6 +231,35 @@ TEST(FusionCoreTest, NineAxisYawCorrectedForDeclination) {
   EXPECT_NEAR(settled_yaw(0.5, -0.15) - base, 0.15, 0.005);
 }
 
+// ─── Test 8c: a state with zero process noise must not drift ────────────────
+// generate_sigma_points() regularises with (n+lambda)*P + 1e-6*I on every predict,
+// and a zero-variance state then trips the identity-shift repair, so a bias with
+// q = 0 still gains variance. ukf.semidefinite_sqrt factors P exactly instead.
+// Predict only, no measurements, zero gyro-bias process noise: P(B_GZ) must not move.
+static double bias_var_after_predicts(bool exact, double p0, int steps) {
+  FusionCoreConfig config;
+  config.ukf.q_gyro_bias = 0.0;
+  config.ukf.semidefinite_sqrt = exact;
+  FusionCore fc(config);
+  State initial;
+  initial.P = StateMatrix::Identity() * 0.1;
+  for (int i : {B_GX, B_GY, B_GZ}) initial.P(i, i) = p0;
+  fc.init(initial, 0.0);
+  for (int k = 1; k <= steps; ++k) fc.predict_only(k * 0.01);
+  return fc.get_state().P(B_GZ, B_GZ);
+}
+
+TEST(FusionCoreTest, ZeroProcessNoiseBiasStaysConstantWithExactSqrt) {
+  EXPECT_NEAR(bias_var_after_predicts(true, 1e-6, 1000), 1e-6, 1e-15);
+  EXPECT_NEAR(bias_var_after_predicts(true, 0.0, 1000), 0.0, 1e-15);
+}
+
+// Pins today's default so the leak cannot disappear from view by accident: with the
+// flag off the same zero-noise bias gains variance on every predict.
+TEST(FusionCoreTest, ZeroProcessNoiseBiasLeaksWithDefaultSqrt) {
+  EXPECT_GT(bias_var_after_predicts(false, 1e-6, 1000), 2e-6);
+}
+
 // ─── Test 9: a backward time jump must not crash the filter ──────────────────
 // A large backward timestamp jump (clock reset, out-of-order timestamps, or
 // bag-replay clock corruption) used to freeze last_timestamp_ in the future, so

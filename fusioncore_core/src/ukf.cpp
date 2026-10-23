@@ -166,48 +166,69 @@ Eigen::MatrixXd UKF::generate_sigma_points() {
   state_.P(WY,WY) = std::min(state_.P(WY,WY), kMaxAngVelVar);
   state_.P(WZ,WZ) = std::min(state_.P(WZ,WZ), kMaxAngVelVar);
 
-  StateMatrix P_reg = (n_aug_ + lambda_) * state_.P;
-  P_reg += StateMatrix::Identity() * 1e-6;
+  StateMatrix L;
+  bool have_L = false;
+  if (params_.semidefinite_sqrt) {
+    // Exact square root of a positive semidefinite matrix: A = P^T L D L^T P, so
+    // S = P^T L sqrt(D) satisfies S S^T = A. Any square root gives valid sigma points.
+    const StateMatrix A = (n_aug_ + lambda_) * state_.P;
+    Eigen::LDLT<StateMatrix> ldlt(A);
+    const Eigen::Matrix<double, STATE_DIM, 1> d = ldlt.vectorD();
+    const double dmax = std::max(d.cwiseAbs().maxCoeff(), 1e-300);
+    if (ldlt.info() == Eigen::Success && d.minCoeff() >= -1e-12 * dmax) {
+      StateMatrix Lm = ldlt.matrixL();
+      StateMatrix S = ldlt.transpositionsP().transpose() *
+                      (Lm * d.cwiseMax(0.0).cwiseSqrt().asDiagonal());
+      L = S;
+      have_L = true;
+    }
+    // A genuinely negative pivot: fall through to the regularise-and-repair chain.
+  }
 
-  Eigen::LLT<StateMatrix> llt(P_reg);
-  if (llt.info() != Eigen::Success) {
-    // P has developed negative eigenvalues (common under sustained high-rate IMU
-    // updates where the K*S*K^T subtraction overshoots in the bias dimensions).
-    // Fix: identity shift: add eps*I to raise all eigenvalues by |min_eigenvalue|.
-    // Unlike the V*max(λ,ε)*V^T clamp, a shift preserves the eigenvectors and keeps
-    // large position/velocity eigenvalues intact.  The clamp approach destroys them
-    // because P's eigenvectors mix position and bias components after cross-coupling,
-    // so clamping bias eigenvalues to 1e-9 also collapses position uncertainty when
-    // P is reconstructed, making the Mahalanobis gate far too tight and rejecting GPS.
-    Eigen::SelfAdjointEigenSolver<StateMatrix> es(state_.P, Eigen::EigenvaluesOnly);
-    double min_eigen = es.eigenvalues().minCoeff();
-    state_.P += StateMatrix::Identity() * (-min_eigen + 1e-9);
-    P_reg = (n_aug_ + lambda_) * state_.P + StateMatrix::Identity() * 1e-6;
-    llt.compute(P_reg);
+  if (!have_L) {
+    StateMatrix P_reg = (n_aug_ + lambda_) * state_.P;
+    P_reg += StateMatrix::Identity() * 1e-6;
+
+    Eigen::LLT<StateMatrix> llt(P_reg);
     if (llt.info() != Eigen::Success) {
-      // Last resort: rebuild P from its eigendecomposition with all eigenvalues
-      // floored to a small positive value. This always yields a PSD matrix, so
-      // the filter degrades gracefully and re-converges when good measurements
-      // return, instead of aborting the whole process. Flooring can shrink some
-      // uncertainty dimensions (the identity shift above is tried first precisely
-      // to avoid that), but a briefly over-confident filter is recoverable; a
-      // crash is not. Reaching here means the state was already badly corrupted
-      // (e.g. by replay clock chaos), which the predict_to re-sync guards upstream.
-      Eigen::SelfAdjointEigenSolver<StateMatrix> es_full(state_.P);
-      Eigen::Matrix<double, STATE_DIM, 1> ev = es_full.eigenvalues().cwiseMax(1e-9);
-      state_.P = es_full.eigenvectors() * ev.asDiagonal() * es_full.eigenvectors().transpose();
-      state_.P = (state_.P + state_.P.transpose()) * 0.5;
+      // P has developed negative eigenvalues (common under sustained high-rate IMU
+      // updates where the K*S*K^T subtraction overshoots in the bias dimensions).
+      // Fix: identity shift: add eps*I to raise all eigenvalues by |min_eigenvalue|.
+      // Unlike the V*max(λ,ε)*V^T clamp, a shift preserves the eigenvectors and keeps
+      // large position/velocity eigenvalues intact.  The clamp approach destroys them
+      // because P's eigenvectors mix position and bias components after cross-coupling,
+      // so clamping bias eigenvalues to 1e-9 also collapses position uncertainty when
+      // P is reconstructed, making the Mahalanobis gate far too tight and rejecting GPS.
+      Eigen::SelfAdjointEigenSolver<StateMatrix> es(state_.P, Eigen::EigenvaluesOnly);
+      double min_eigen = es.eigenvalues().minCoeff();
+      state_.P += StateMatrix::Identity() * (-min_eigen + 1e-9);
       P_reg = (n_aug_ + lambda_) * state_.P + StateMatrix::Identity() * 1e-6;
       llt.compute(P_reg);
       if (llt.info() != Eigen::Success) {
-        // Absolute last resort: reset to a safe diagonal covariance. Never throw.
-        state_.P = StateMatrix::Identity();
+        // Last resort: rebuild P from its eigendecomposition with all eigenvalues
+        // floored to a small positive value. This always yields a PSD matrix, so
+        // the filter degrades gracefully and re-converges when good measurements
+        // return, instead of aborting the whole process. Flooring can shrink some
+        // uncertainty dimensions (the identity shift above is tried first precisely
+        // to avoid that), but a briefly over-confident filter is recoverable; a
+        // crash is not. Reaching here means the state was already badly corrupted
+        // (e.g. by replay clock chaos), which the predict_to re-sync guards upstream.
+        Eigen::SelfAdjointEigenSolver<StateMatrix> es_full(state_.P);
+        Eigen::Matrix<double, STATE_DIM, 1> ev = es_full.eigenvalues().cwiseMax(1e-9);
+        state_.P = es_full.eigenvectors() * ev.asDiagonal() * es_full.eigenvectors().transpose();
+        state_.P = (state_.P + state_.P.transpose()) * 0.5;
         P_reg = (n_aug_ + lambda_) * state_.P + StateMatrix::Identity() * 1e-6;
         llt.compute(P_reg);
+        if (llt.info() != Eigen::Success) {
+          // Absolute last resort: reset to a safe diagonal covariance. Never throw.
+          state_.P = StateMatrix::Identity();
+          P_reg = (n_aug_ + lambda_) * state_.P + StateMatrix::Identity() * 1e-6;
+          llt.compute(P_reg);
+        }
       }
     }
+    L = llt.matrixL();
   }
-  StateMatrix L = llt.matrixL();
   sigma.col(0) = state_.x;
   for (int i = 0; i < n_aug_; ++i) {
     if (params_.tangent_space_attitude) {

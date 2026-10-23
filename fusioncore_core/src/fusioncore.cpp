@@ -1434,6 +1434,15 @@ void FusionCore::update_encoder(
     adapt_R<sensors::ENCODER_DIM>(R_encoder_, R_encoder_floor_, encoder_innovations_, innovation, config_.adaptive_encoder);
   }
 
+  if (config_.nhc_ay_sigma > 0.0) {
+    const Eigen::Matrix<double, 1, 1> z0 = Eigen::Matrix<double, 1, 1>::Zero();
+    Eigen::Matrix<double, 1, 1> R_ay;
+    R_ay(0, 0) = config_.nhc_ay_sigma * config_.nhc_ay_sigma;
+    ukf_.update<1>(z0, [](const StateVector& x) {
+      Eigen::Matrix<double, 1, 1> h; h(0, 0) = x[AY] - x[VX] * x[WZ]; return h;
+    }, R_ay);
+  }
+
   last_encoder_time_ = timestamp_seconds;
   ++update_count_;
 }

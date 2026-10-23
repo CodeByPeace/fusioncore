@@ -59,8 +59,9 @@ users two different filters.
 
 ## Choosing one
 
-- **`ground_robot.yaml`** needs wheel odometry. It freezes the acceleration and bias
-  states, which is only safe because the encoder constrains yaw rate directly. Tested
+- **`ground_robot.yaml`** needs wheel odometry. It zeroes the process noise and prior of
+  the acceleration and bias states, which is only safe because the encoder constrains yaw
+  rate directly. **Measured 2026-10-22: "frozen" means slowed, not held.** The profile zeroes the bias process noises and priors, but the UKF adds a 1e-6 identity to P when it builds sigma points, and a zero-variance state triggers its identity-shift repair, so the biases still drift. On NCLT 2013-04-05 the gyro bias reached a median sigma of 0.053 rad/s and roamed up to about 0.18 rad/s. The measured improvements are what the profile does as shipped; the word "freeze" overstates the mechanism. Not yet fixed. Tested
   against a 20 deg/s gyro bias and a 29.7% encoder scale error in simulation and it
   held, but do not use it on a platform without encoders.
 - **`ground_robot_flat.yaml`** adds a Z-position constraint for campus, warehouse,

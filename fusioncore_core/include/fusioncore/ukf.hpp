@@ -229,6 +229,18 @@ struct UKFParams {
   // 100 Hz needs dividing by about 100 to mean the same thing.
   bool q_time_scaled = false;
 
+  // Factor the sigma-point covariance exactly instead of regularising it every step.
+  // generate_sigma_points() builds the points from (n+lambda)*P + 1e-6*I, which adds
+  // variance to EVERY state on every predict, and a state held at zero variance makes
+  // P singular so the identity-shift repair raises every diagonal as well. Together
+  // they let a "frozen" bias drift: on NCLT 2013-04-05 the ground_robot profile's gyro
+  // bias reached a median sigma of 0.053 rad/s with zero process noise
+  // (tools/benchmark_regression.md 2026-10-22). When true, a pivoted LDLT factors the
+  // positive SEMIdefinite matrix as it is, so a zero-variance state gets zero spread,
+  // and the regularise-and-repair chain runs only if a pivot is genuinely negative.
+  // Default false: it changes every output, so it ships only through the holdout rule.
+  bool semidefinite_sqrt = false;
+
   bool tangent_space_attitude = false;
 
   // Process noise: how much we trust the motion model

@@ -15,8 +15,10 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `ground_robot_flat`. A 23-state filter can estimate more than a wheeled robot can
   observe: the gyro measures `WZ + B_GZ` and the accelerometer measures
   `AX + B_AX + gravity`, so those pairs are not separately observable from those sensors
-  alone. On a robot with encoders, `ground_robot` freezes the biases and treats the
-  encoder's yaw rate as bias-free, so the encoder carries the constraint. Measured in
+  alone. On a robot with encoders, `ground_robot` sets the bias process noises and priors
+  to zero and treats the encoder's yaw rate as bias-free, so the encoder carries the
+  constraint. That does NOT hold the biases fixed: the UKF's sigma-point regularisation (a 1e-6 identity added to P, plus the identity-shift repair a zero-variance state triggers) still lets them drift: on NCLT 2013-04-05 the 'frozen' gyro bias reached a median sigma of 0.053 rad/s and roamed up to about 0.18 rad/s, so the profile slows the biases rather than holding them (found 2026-10-22, not
+  fixed). Measured in
   replay, frozen against free, scored through `hardware/ate_tum.py` (the median is worse
   on 2013-04-05, 7.010 to 7.082, and better on the other four):
 

@@ -611,6 +611,14 @@ struct FusionCoreConfig {
   // roll and pitch observable; only AX/AY/AZ are pinned. 0 = disabled. Experimental,
   // replay-only: see tools/benchmark_regression.md 2026-10-22.
   double gnss_coast_hold_accel_sigma = 0.0;
+  // Non-holonomic lateral-acceleration constraint for wheeled robots: on every encoder
+  // update, fuse AY - VX*WZ = 0 with this 1-sigma (m/s^2). A robot that does not slip
+  // sideways has only centripetal lateral acceleration. VY = 0 is already fused through
+  // the encoder (encoder.nhc_vy_sigma); AY was left free, and with nothing observing it
+  // during a GNSS gap its cross-covariance with position grows and every update kicks
+  // position sideways (tools/benchmark_regression.md 2026-10-22). 0 = disabled.
+  // Experimental, replay-only.
+  double nhc_ay_sigma = 0.0;
   // Also enter coast mode when GPS has been absent for this many seconds.
   // Handles GPS outages where the receiver stops publishing entirely (mode=2,
   // power loss, tunnel) rather than publishing fixes that fail the chi2 gate.

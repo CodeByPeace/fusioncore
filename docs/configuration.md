@@ -872,7 +872,9 @@ motion and under constant acceleration.
   and it is why no library default was changed to ship this.
 - **`ground_robot`** stops estimating acceleration and the bias states.
   **It requires wheel encoders.** Freezing the gyro bias is only safe because the
-  encoder measures yaw rate with no bias term and carries the constraint instead. On a
+  profile also treats the encoder's yaw rate as bias-free (the model carries an encoder
+  yaw-rate bias, which the profile freezes too), so the encoder carries the constraint.
+  **Measured 2026-10-22: "frozen" means slowed, not held.** The profile zeroes the bias process noises and priors, but the UKF adds a 1e-6 identity to P when it builds sigma points, and a zero-variance state triggers its identity-shift repair, so the biases still drift. On NCLT 2013-04-05 the gyro bias reached a median sigma of 0.053 rad/s and roamed up to about 0.18 rad/s. The measured improvements are what the profile does as shipped; the word "freeze" overstates the mechanism. Not yet fixed. On a
   platform without odometry this profile is simply wrong.
 - **`ground_robot_flat`** is `ground_robot` plus a Z-position constraint at 0.3 m, for
   terrain that really is flat: campus, warehouse, parking lot, most field work. Do not
