@@ -58,3 +58,15 @@ DEV results are reported alongside, but they cannot make a candidate pass.
     C   A + B
 
 Order: A first, because it changes the meaning of "frozen" in B.
+
+## Outcome, 2026-10-23
+
+Holdout logs built for all seven; candidates A and C run once each.
+
+    A   FAIL   4/7 better by 2%; 2012-11-04 +20.5% RMSE, +12.4% median
+    C   FAIL   3/7 better; 2012-01-08 +251.9%, 2012-03-31 +15.3%
+
+Neither ships. B was not run: it is C without the leak fix, and its DEV result (2012-08-20
++9.2%) was already the one C was meant to repair. The holdout is spent for this line of work
+(rule 6), so B cannot now be tested on it either. Detail in
+tools/benchmark_regression.md, 2026-10-23.

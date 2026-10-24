@@ -2577,3 +2577,99 @@ need not count as `messages_lost` and that counter alone could read 0 while mess
 skipped. One real node/replay difference was noted while reading for it: the node
 initialises P as 0.1*I with position variance 1000, replay from the State default. Result
 below when the run completes.
+
+## 2026-10-23  The heading-wobble hypothesis fails; the leak fix and the combined candidate on DEV
+
+### Is the jitter a heading wobble amplified by distance? No.
+
+`tools/jitter_heading_corr.py` on the 2012-06-15 gap (461.5 s, 71126 events, shipped
+config, replay byte-identical to the baseline with attribution on):
+
+    |lateral kick| vs lever * |dpsi|     r = +0.500   slope 0.008 (hypothesis: 1.0)
+    |lateral kick| vs |dpsi| alone       r = +0.550
+    |lateral kick| vs lever alone        r = +0.127
+    d b_gz vs d heading, lags -10..+20 s r between -0.091 and +0.112
+
+The lever arm makes the relationship WEAKER, not stronger, and the kicks are about 1/125 of
+the size the hypothesis predicts. The bias estimate does not lead heading at any lag. What
+remains is a moderate same-event link with heading change, and that heading change includes
+the robot turning, which is when lateral velocity and acceleration are non-zero: consistent
+with the lateral-velocity/acceleration channel found on 2026-10-22, and with the earlier
+result that removing every yaw-rate measurement left the jitter unchanged.
+
+### DEV results (not a ship decision; tools/ship_rule.md decides on the holdout)
+
+Replay, ATE RMSE 3D (m), hardware/ate_tum.py, against shipped on the same sequence.
+A = `ukf.semidefinite_sqrt` alone. C = A + `platform.profile=ground_robot` (all seven keys
+applied, verified per run) + gyro heading in coast.
+
+    sequence      shipped     A                  C                  outrate shipped / A / C
+    2012-02-04   142.043   158.530 (+11.6%)   146.201  (+2.9%)   1.411 / 1.428 / 1.235
+    2012-06-15    78.428    74.563  (-4.9%)    61.266 (-21.9%)   1.228 / 1.234 / 1.082
+    2012-08-20   165.364   150.059  (-9.3%)   159.035  (-3.8%)   1.569 / 1.547 / 1.410
+    2012-09-28    22.805    18.660 (-18.2%)    19.642 (-13.9%)   1.361 / 1.316 / 1.181
+    2013-04-05    16.456    12.521 (-23.9%)    17.747  (+7.8%)   1.555 / 1.544 / 1.332
+
+The predictions for C, written before running: 2012-08-20's cost shrinks or disappears
+(HOLDS: 180.598 without the leak fix, 159.035 with it); jitter drops further (HOLDS, every
+sequence); 2013-04-05 beats 12.671 (FALSIFIED: 17.747). A alone reaches 12.521 there.
+
+A barely moves the jitter, as the correlation result says it should: the jitter is not the
+bias channel. Both candidates are "most better, some worse" on DEV, which is exactly what
+the holdout exists to settle. Both go to it once the seven holdout logs exist.
+
+## 2026-10-23  HOLDOUT: both candidates fail, and the node-versus-replay gap is back on one sequence
+
+### The seven holdout logs
+
+Built from seven 1x node runs that recorded their inputs, exported with `export_bag.py` (the
+path validated by re-exporting 2012-09-28: every shared IMU/IMUQ/ENC event identical, GNSS a
+constant 5.5 cm origin shift). Every run unstarved (102.0 to 103.3 Hz). Two exports matched
+the player's counts exactly; five were short at the START only (the recorder starting 0.09 to
+1.72 s late) and were accepted after `~/nclt/holdout/where_missing.py` showed nothing missing
+inside or after, on IMU, ENC and GNSS (GNSS compared against 3D fixes only, as the player
+filters them). Each accepted log has a NOTE file beside it in `~/nclt/exported/`.
+
+### The one-shot test, per tools/ship_rule.md (committed 27aa7a9 before any holdout log)
+
+Replay, ATE RMSE 3D (m), hardware/ate_tum.py, every arm on identical associated points, no
+config or profile warnings on any of the 21 runs. `~/nclt/holdout/apply_rule.py` applies the
+rule mechanically.
+
+    sequence     shipped    A (leak fix)         C (A + profile + gyro heading)
+    2012-01-08    52.152    49.890  (-4.3%)    183.529 (+251.9%)  median 12.487 -> 130.448
+    2012-03-31    22.279    17.306 (-22.3%)     25.677  (+15.3%)
+    2012-05-11     9.651     9.650  (-0.0%)      9.608   (-0.4%)
+    2012-10-28    18.778    17.265  (-8.1%)     17.033   (-9.3%)
+    2012-11-04    54.253    65.358 (+20.5%)     47.235  (-12.9%)
+    2012-12-01    16.384    16.200  (-1.1%)     16.122   (-1.6%)
+    2013-02-23    21.377    19.401  (-9.2%)     20.727   (-3.0%)
+
+**A FAILS**: 4 of 7 better by 2% (needs 5), and 2012-11-04 is +20.5% RMSE, +12.4% median.
+**C FAILS**: 3 of 7 better, 2012-01-08 +251.9% and 2012-03-31 +15.3%. C still cuts the
+output-rate jitter on every holdout sequence (e.g. 1.666 to 1.489, 1.583 to 1.372), at an
+accuracy cost the rule does not allow.
+
+**This is the holdout doing its job.** On the five DEV sequences both read "four better, one
+worse". On seven sequences neither was tuned on, A met a new bad case and C broke one
+outright. Per rule 6 the holdout is now spent for this line of work: a retuned A or C may not
+be re-tested on these seven. Both flags stay off.
+
+### The node-versus-replay gap is NOT modest on every sequence
+
+The 2026-10-19 correction ("the node runs between 21% better and 7% worse than replay") was
+measured on the five DEV sequences and holds there. On the holdout, node (2026-10-23 runs,
+current main) against replay (shipped config, same day):
+
+    2012-01-08   node 178.808   replay  52.152   3.43x
+    2012-11-04   node  68.232   replay  54.253   1.26x
+    2012-03-31   node  25.887   replay  22.279   1.16x
+    2012-05-11   node   9.605   replay   9.651   1.00x
+    2012-12-01   node  15.948   replay  16.384   0.97x
+    2012-10-28   node  17.220   replay  18.778   0.92x
+    2013-02-23   node  16.934   replay  21.377   0.79x
+
+2012-01-08 is 3.43x worse through the node, far outside the node's 14.8% spread, and its RL
+control reproduced its record to 0.47% (22.900 against 22.792), so the input is not the cause.
+The drop counter rules out lost messages on 2012-09-28 only; 2012-01-08 is untested. This
+sequence is where the node and replay disagree, and it is the place to look.
