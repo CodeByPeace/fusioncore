@@ -2718,3 +2718,36 @@ unaffected. From now on the node-faithful pipeline is `imuq_rp=1`.
 
 On 2012-01-08, plain replay with re-anchoring on: 52.152 -> 18.569 (4 re-anchors). Not yet
 measured with imuq_rp=1.
+
+## 2026-10-25  Candidate R (re-anchoring on by default), holdout: FAILS the rule, on secondary clauses
+
+Pre-registered in tools/ship_rule.md (commit 46563a4, pushed before any run). Pipeline:
+replay with `imuq_rp=1` (node-faithful). Baseline: shipped config on the same pipeline.
+ATE RMSE 3D (m), hardware/ate_tum.py, identical associated points, no config warnings.
+
+    HOLDOUT        shipped      R          RMSE      median      outrate        re-anchors
+    2012-01-08    178.226    16.996   -90.5%    -94.5%    1.556->1.452       4
+    2012-03-31     21.200    18.573   -12.4%     +3.3%    0.951->0.950       3
+    2012-05-11      9.628     9.628    +0.0%     +0.0%    0.939->0.939       0
+    2012-10-28     16.326    13.923   -14.7%     -0.3%    1.109->1.111       3
+    2012-11-04     65.926    64.166    -2.7%     +4.4%    1.406->1.403       2
+    2012-12-01     16.074    12.737   -20.8%     +2.1%    1.179->1.305       4
+    2013-02-23     21.340    20.080    -5.9%     -0.6%    0.898->0.901       3
+
+**FAIL** by the rule: median +3.3% (2012-03-31) and +4.4% (2012-11-04) against a 3% limit,
+and output-rate ratio +0.126 on 2012-12-01 against 0.05. On the primary measure it is the
+strongest held-out result this project has: RMSE lower on 6 of 7, higher on none, and the
+node's 2012-01-08 lock-out goes 178.226 to 16.996. The rule exists for exactly this shape, a
+headline win paid for in typical-case accuracy and smoothness, and the thresholds are not
+being moved after seeing the result. Re-anchoring stays opt-in; the holdout is spent for it.
+
+    DEV (reported only)  shipped      R        RMSE     median
+    2012-02-04          147.927   58.550   -60.4%   -63.9%   (output-rate +0.059)
+    2012-06-15           81.216   81.216    +0.0%    +0.0%
+    2012-08-20          184.052   43.958   -76.1%   -72.1%
+    2012-09-28           22.499   10.008   -55.5%    -7.9%
+    2013-04-05           12.056   11.174    -7.3%    -0.2%
+
+**Still owed:** the README's published raw-GNSS-versus-FusionCore table (Status 2026-10-18)
+was measured on the pipeline without the IMU orientation fusion. It has to be re-measured on
+the node-faithful pipeline before it is cited again. Not edited until then.

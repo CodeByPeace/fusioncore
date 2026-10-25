@@ -83,3 +83,11 @@ exactly as the node does. On 2026-10-25 that was shown to reproduce the node on 
 pipeline. Everything else in the rule (clauses 1 to 6, scoring through hardware/ate_tum.py)
 applies unchanged. R is run once on the seven holdout sequences; DEV results are reported
 alongside and cannot make it pass.
+
+## Outcome of R, 2026-10-25
+
+    R   FAIL   RMSE lower on 6/7 (2012-01-08 -90.5%), none higher; fails clause 3
+               (median +3.3% on 2012-03-31, +4.4% on 2012-11-04) and clause 4
+               (output-rate ratio +0.126 on 2012-12-01)
+
+Re-anchoring stays opt-in. The holdout is spent for this line.
