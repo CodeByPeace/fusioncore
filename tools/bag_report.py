@@ -73,6 +73,7 @@ TURNING_RAD_S = 0.08
 # Below this the platform is treated as stationary, for bias and ZUPT questions.
 STILL_SPEED = 0.02
 STILL_RATE = 0.02
+STILL_GYRO_SIGMA = 0.05    # rad/s: a still MEMS gyro is ~0.003-0.02; above this the body is moving
 
 SEVERITY_ORDER = {"BLOCKER": 0, "WARNING": 1, "INFO": 2, "OK": 3}
 
@@ -350,6 +351,17 @@ def check_stationary_bias(series):
         return []
     bias = statistics.mean(gz)
     noise = statistics.pstdev(gz) if len(gz) > 1 else 0.0
+    # The wheels say still; the gyro has to agree before its mean is a bias. On a
+    # balancing or vibrating platform the wheels can sit near zero while the body
+    # rocks, and the mean of that is motion, not bias: a 20 min NCLT window reported
+    # -0.110 rad/s from 6.9 s whose gyro 1-sigma was 0.171 (the full log: +0.003).
+    if noise > STILL_GYRO_SIGMA:
+        return [finding(
+            "INFO", "Stationary gyro bias not measured: the gyro was not quiet",
+            f"The longest interval the wheels call still ({hi - lo:.1f} s) has a gyro-z "
+            f"1-sigma of {noise:.3f} rad/s, so the body was moving while the wheels were "
+            f"not, and its mean ({bias:+.4f} rad/s) is not a bias.",
+            "Record 10 s or more with the platform genuinely at rest.")]
     out = [finding("INFO", f"Stationary gyro-z bias {bias:+.5f} rad/s",
                    f"Mean over {len(gz)} samples in the longest still interval "
                    f"({hi - lo:.1f} s), 1-sigma {noise:.5f}.")]

@@ -348,3 +348,21 @@ class ImuOrientationTest(unittest.TestCase):
         for m in s["imu"]:
             m["q"] = None
         self.assertEqual([], br.check_imu_orientation(s))
+
+
+class StationaryBiasQuietTest(unittest.TestCase):
+    """The wheels say still, but the body rocks: its mean gyro is motion, not bias."""
+
+    def test_a_rocking_body_is_not_reported_as_bias(self):
+        import math
+        imu = stream(2000, 100.0, wz=lambda i: -0.11 + 0.2 * math.sin(i / 7.0))
+        odom = stream(2000, 100.0, v=0.0, wz=0.0)
+        f = br.check_stationary_bias({"imu": imu, "odom": odom})
+        self.assertEqual([], sev(f, "WARNING"), titles(f))
+        self.assertIn("gyro was not quiet", titles(f))
+
+    def test_a_quiet_still_gyro_still_reports_its_bias(self):
+        imu = stream(2000, 100.0, wz=lambda i: 0.003 + 0.002 * ((i % 7) - 3) / 3)
+        odom = stream(2000, 100.0, v=0.0, wz=0.0)
+        f = br.check_stationary_bias({"imu": imu, "odom": odom})
+        self.assertIn("Stationary gyro-z bias +0.00300", titles(f))
