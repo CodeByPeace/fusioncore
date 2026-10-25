@@ -470,10 +470,11 @@ public:
     declare_parameter("gnss.reacquire_confirm_fixes", 3);
     declare_parameter("gnss.p_inflate_sigma",       50.0);
     // Re-anchoring after a blackout. DEFAULT OFF, so no existing deployment
-    // changes behaviour by upgrading. Measured on NCLT 2026-10-18: enabling it
-    // takes 2012-08-20 from 171.393 to 46.671 and 2012-02-04 from 142.792 to
-    // 59.689, with no sequence regressing on RMSE. These were replay-only until
-    // now, which meant the fix existed and no deployment could reach it.
+    // changes behaviour by upgrading. On seven held-out NCLT sequences (2026-10-25,
+    // node-faithful replay) it lowered full-trajectory RMSE on 6 of 7 and raised it on
+    // none, but raised median error 3.3%/4.4% on two and jitter on one, so it failed
+    // the default-change rule in tools/ship_rule.md. Recommended as opt-in; see
+    // docs/configuration.md.
     declare_parameter("gnss.reanchor_enabled",       false);
     declare_parameter("gnss.reanchor_window",        20);
     declare_parameter("gnss.reanchor_reject_frac",   0.6);

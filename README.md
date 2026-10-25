@@ -240,7 +240,44 @@ said so for weeks.
 
 FusionCore against robot_localization on the [NCLT dataset](http://robots.engin.umich.edu/nclt/): same IMU, wheel odometry and GPS, no manual tuning, twelve full-length sequences across all seasons. RL-EKF run with chi-squared-equivalent thresholds at 99.9% confidence.
 
-> **Status, 2026-10-18, and this supersedes every dated note below it.**
+> **Status, 2026-10-25, and this supersedes every dated note below it.**
+>
+> Scored at GPS fix times on all 12 NCLT sequences, the shipped default does not beat raw
+> GPS: raw GPS is better on 11 and tied (within 0.2%) on the twelfth. With opt-in
+> re-anchoring (`gnss.reanchor_enabled`), FusionCore beats raw GPS on 2 of 12: 2012-03-31
+> by 22.4% and 2012-10-28 by 5.4%, both held-out sequences never used for tuning. On the
+> held-out set, scored over the full trajectory, re-anchoring lowers RMSE on 6 of 7 and
+> raises it on none, including 2012-01-08 going from 178.2 m to 17.0 m. It also raises
+> median error by 3.3% and 4.4% on two sequences and jitter on one, which is why it is off
+> by default.
+>
+> ATE RMSE (3D) at GPS fix times, all three columns on identical timestamps:
+>
+> | Sequence | Set | Raw GPS | FusionCore, shipped default | FusionCore, re-anchoring on | Re-anchoring on, ratio to raw GPS |
+> |---|---|---|---|---|---|
+> | 2012-01-08 | held out | 9.883 m | 170.643 m | 10.891 m | 1.102x |
+> | 2012-02-04 | dev | 57.564 m | 151.937 m | 59.303 m | 1.030x |
+> | 2012-03-31 | held out | 13.824 m | 15.206 m | **10.726 m** | 0.776x |
+> | 2012-05-11 | held out | 9.186 m | 9.166 m | 9.166 m | 0.998x |
+> | 2012-06-15 | dev | 9.293 m | 12.469 m | 12.469 m | 1.342x |
+> | 2012-08-20 | dev | 34.250 m | 193.923 m | 39.782 m | 1.162x |
+> | 2012-09-28 | dev | 8.960 m | 21.560 m | 10.166 m | 1.135x |
+> | 2012-10-28 | held out | 13.921 m | 15.057 m | **13.170 m** | 0.946x |
+> | 2012-11-04 | held out | 20.267 m | 27.319 m | 22.535 m | 1.112x |
+> | 2012-12-01 | held out | 12.681 m | 16.149 m | 12.731 m | 1.004x |
+> | 2013-02-23 | held out | 15.719 m | 17.435 m | 15.780 m | 1.004x |
+> | 2013-04-05 | dev | 8.624 m | 9.981 m | 8.774 m | 1.017x |
+>
+> How these were produced, so they can be reproduced: the deterministic offline replay of
+> the shipped NCLT config, fusing the IMU orientation exactly as the ROS node does (on
+> 2012-01-08 that reproduces the node to 0.3%), scored by `tools/score_raw_vs_fc.py`
+> (version `ed061b2ff01a`, which prints that hash on every row) through `hardware/ate_tum.py`.
+> "Held out" sequences were never used to develop or tune anything; the rule they were
+> tested under was committed before their logs existed (`tools/ship_rule.md`). The
+> 2026-10-18 table below could not be reproduced: its files survive but the scoring step
+> that produced its numbers does not, so it is kept only as history.
+
+> **Status, 2026-10-18. SUPERSEDED by the 2026-10-25 note above; its table could not be reproduced and is kept as history.**
 >
 > **The baseline this table never had: raw, unfiltered GNSS.** Take the fixes straight out
 > of the log, score them as a trajectory, and compare. Scored at identical points, both

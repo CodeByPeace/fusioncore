@@ -832,6 +832,42 @@ Fixes with `fix_type < 3` (no 3D lock) or `gnssFixOK` flag unset are silently dr
 
 ---
 
+## Recovering after GPS comes back (`gnss.reanchor_enabled`)
+
+**Recommended for any robot that loses GPS for more than a few seconds at a time. Off by
+default, for the reasons measured below.**
+
+When GPS drops out, the filter dead-reckons and drifts. When fixes return, they disagree
+with the drifted estimate, so the outlier gate can reject them as outliers, and adaptive
+noise discounts the few that get through. The filter then stays wrong, sometimes for many
+minutes, while perfectly good fixes arrive. Measured on NCLT, most of the error on the
+worst sequences was in this recovery window, not in the outage itself.
+
+Re-anchoring watches for that state: the gate refusing most of what arrives, while the
+recent fixes agree with each other and with wheel odometry. When both hold, it moves the
+position onto the fixes instead of waiting for the gate to let them in. It moves position
+only, never heading.
+
+```yaml
+    gnss.reanchor_enabled: true
+```
+
+Every other re-anchoring setting (window, rejection fraction, buffer, odometry tolerance, cooldown) has a measured default; leave them unless you have
+data that says otherwise. Each re-anchor is reported on `/fusion/debug/gnss_status`
+(`reanchored`, `reanchor_jump_m`, `reanchor_count`) and in `/diagnostics`, because it is a
+deliberate jump in the published position and anything consuming the pose should know.
+
+**What it does, measured on seven NCLT sequences never used to develop it** (offline replay
+of the shipped config, fusing IMU orientation as the node does, full-trajectory ATE RMSE):
+lower RMSE on 6 of 7 and higher on none. The largest change was a sequence where the filter
+otherwise stayed locked out for about 800 seconds: 178.2 m to 17.0 m.
+
+**What it costs, on the same seven:** median error rose 3.3% and 4.4% on two sequences, and
+the output-rate jitter of the position rose on one. A re-anchor is a jump, and those are the
+price of it. That is why it is not the default: the rule a default change has to pass was
+written before the test, and it fails on those two costs. The full table and the rule are
+in `tools/benchmark_regression.md` and `tools/ship_rule.md`.
+
 ## Declaring the platform
 
 `platform.profile` is a single parameter that answers one question: what can this
