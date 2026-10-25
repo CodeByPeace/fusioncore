@@ -26,6 +26,7 @@ whatever they are named.
 | Stationary gyro bias | measured in the longest contiguous still interval |
 | GNSS quality | declared sigma against how far consecutive fixes actually move, and blackout length |
 | Observability | whether the bag contains a manoeuvre that makes heading and gyro bias observable at all |
+| IMU orientation | whether the IMU's reported roll/pitch agree with gravity at rest, and whether they are just the accelerometer's tilt (not acceleration-compensated) while moving |
 
 Findings come back as `BLOCKER`, `WARNING`, `INFO` or `OK`. A **blocker** is something
 that makes a whole class of estimation problem unfixable by tuning, so it is worth
@@ -74,6 +75,22 @@ project's own tests (on NCLT, which drives both directions, it measured -0.63 to
 not contain the information.
 
 See [Observability](observability.md) for the manoeuvres and why each one works.
+
+### Your IMU's orientation is its accelerometer, reported with confidence
+
+Many IMUs and drivers publish an orientation alongside the raw rates, and FusionCore fuses
+its roll and pitch at whatever covariance the message claims. Some of those orientations
+are not attitude estimates at all: they are the accelerometer's tilt, so they swing by
+atan(a/g) every time the robot accelerates or brakes, and the message still claims a
+fraction of a degree. The check compares the reported tilt with the accelerometer's tilt
+while the robot accelerates; a real attitude estimate departs from it, this kind does not.
+
+It is not hypothetical. On the NCLT dataset's own IMU it reads: while accelerating, the
+reported roll/pitch track the accelerometer's tilt to a median 0.08 deg where a real
+estimate would differ by about 4.3 deg, at a claimed 0.57 deg 1-sigma. Fused at that
+confidence it put FusionCore into an 800 s lock-out on one sequence (178.2 m ATE); at a
+1.8 deg covariance the same run scored 56.0 m. The fix is on the IMU side: report a
+covariance that covers the acceleration error, or set `orientation_covariance[0]` to -1.
 
 ## What it will not tell you
 

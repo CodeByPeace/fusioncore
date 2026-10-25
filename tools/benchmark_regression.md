@@ -2788,3 +2788,34 @@ on seven (1.02x to 1.34x).
 The README is NOT edited yet: its standing instruction says no new claim may contradict
 "does not beat raw GNSS on any NCLT sequence", and this measurement does, for the opt-in
 setting on two sequences. That wording is Manan's call.
+
+## 2026-10-25  Why the IMU orientation input causes the lock-out: it is the accelerometer, claimed at 0.57 deg
+
+Checked as suggested: in quasi-static stretches of 2012-01-08 (5464 samples), the reported
+roll/pitch match the accelerometer's gravity tilt to 0.00 deg median, 0.00 MAD, corr 1.000.
+The swapped and sign-flipped alternatives are clearly wrong, so it is NOT a frame or
+convention bug in what is fused. (The player converts the accelerometer and gyro NED to ENU
+and passes the AHRS roll/pitch/yaw through unconverted; roll/pitch nevertheless agree with
+gravity, and yaw is fused at 1e6 and so ignored.)
+
+The real finding is that the match does not break while the Segway accelerates: with
+|dv/dt| > 0.3 m/s^2 (69585 samples), reported pitch still tracks accelerometer tilt to a
+median 0.037 deg, where a real attitude estimate would differ by about 1.75 deg. NCLT's
+"AHRS" roll/pitch is the accelerometer's tilt. The player publishes it at variance 1e-4
+(0.57 deg), so the node fuses the accelerometer twice, the second time as a confident
+attitude that is wrong whenever the robot accelerates.
+
+Its variance alone decides 2012-01-08 (node-faithful replay, full trajectory ATE RMSE):
+
+    roll/pitch sigma   0.57 deg (player)  1.81 deg   5.73 deg   18.1 deg   not fused
+    ATE RMSE              178.226          55.999     51.134     26.096     52.152
+
+`tools/bag_report.py` now checks for this (`check_imu_orientation`): on the 2012-05-11 node
+bag it reports the reported tilt tracking accelerometer tilt to a median 0.08 deg over
+112305 accelerating samples against an expected 4.3 deg, at a claimed 0.57 deg. It also
+flags orientation inconsistent with gravity at rest (a frame error). Four tests.
+
+The benchmark-side fix is the player's covariance, which is part of the measurement chain
+and changes every node number, so it is a decision rather than an edit; with the NCLT
+holdout spent, its effect on accuracy cannot be graded on NCLT any more. This closes the
+NCLT line of work for now.
