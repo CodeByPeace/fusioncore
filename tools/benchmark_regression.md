@@ -2751,3 +2751,40 @@ being moved after seeing the result. Re-anchoring stays opt-in; the holdout is s
 **Still owed:** the README's published raw-GNSS-versus-FusionCore table (Status 2026-10-18)
 was measured on the pipeline without the IMU orientation fusion. It has to be re-measured on
 the node-faithful pipeline before it is cited again. Not edited until then.
+
+## 2026-10-25  Raw GNSS against FusionCore, re-measured on all twelve, node-faithful pipeline
+
+**The README's Status 2026-10-18 table cannot be reproduced.** Its own files still exist
+(`gn_2012-02-04.tum`, `fx_2012-02-04_base.tum`, `fx_2012-02-04_new.tum`) and today score
+57.564 / 145.629 / 59.340 through hardware/ate_tum.py against the published 58.672 /
+144.903 / 60.522; evo at t_max_diff 0.01 and 0.05 matches neither. The scoring step that
+produced the table is not on disk. Same failure class as the 78.139 baseline.
+
+Re-measured: one scorer (hardware/ate_tum.py, Umeyama SE3, 0.1 s association, which matches
+evo at evaluate.py's tolerance), fix-time points (`subsample_to_fix_times.py`), all three
+columns restricted to IDENTICAL timestamps (pair counts equal on every row), trajectories
+from the node-faithful replay (`imuq_rp=1`). "After" = re-anchoring on (opt-in).
+
+    sequence     pairs   raw GNSS   FC before   FC after   before/GNSS  after/GNSS
+    2012-01-08   10172      9.883     170.643     10.891      17.266x      1.102x
+    2012-02-04    8905     57.564     151.937     59.303       2.639x      1.030x
+    2012-03-31   10038     13.828      15.212     10.729       1.100x      0.776x
+    2012-05-11   10386      9.186       9.166      9.166       0.998x      0.998x
+    2012-06-15    6527      9.293      12.469     12.469       1.342x      1.342x
+    2012-08-20    9799     34.250     193.923     39.782       5.662x      1.162x
+    2012-09-28    8404      8.960      21.560     10.166       2.406x      1.135x
+    2012-10-28    8907     13.921      15.057     13.170       1.082x      0.946x
+    2012-11-04    8196     20.272      27.326     22.540       1.348x      1.112x
+    2012-12-01    7835     12.681      16.150     12.731       1.274x      1.004x
+    2013-02-23    8568     15.725      17.442     15.786       1.109x      1.004x
+    2013-04-05    7452      8.623       9.982      8.774       1.158x      1.018x
+
+**Shipped default:** raw GNSS has the lower RMSE on 11 of 12; 2012-05-11 is a 0.2% tie.
+The published conclusion holds for what ships.
+**Re-anchoring on (opt-in):** FusionCore is lower than raw GNSS on 2 of 12, 2012-03-31
+(-22.4%) and 2012-10-28 (-5.4%), both HOLDOUT sequences; within 0.4% on three more; worse
+on seven (1.02x to 1.34x).
+
+The README is NOT edited yet: its standing instruction says no new claim may contradict
+"does not beat raw GNSS on any NCLT sequence", and this measurement does, for the opt-in
+setting on two sequences. That wording is Manan's call.
