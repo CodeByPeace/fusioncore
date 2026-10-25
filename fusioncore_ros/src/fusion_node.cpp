@@ -2269,6 +2269,22 @@ private:
     double roll, pitch, yaw;
     tf2::Matrix3x3(q_base).getRPY(roll, pitch, yaw);
 
+    // An orientation whose roll/pitch come from the same accelerometer this node already
+    // fuses double-counts it, and is off by about atan(a/g) whenever the robot accelerates:
+    // more than a degree at ordinary accelerations. Declared tighter than 1 deg, that is
+    // the input that put NCLT 2012-01-08 into an 800 s GPS lock-out (2026-10-25). The node
+    // cannot tell from one message whether the orientation is a real attitude estimate,
+    // so it says so once; tools/bag_report.py can tell from a recorded log.
+    if (!warned_tight_orientation_ && msg->orientation_covariance[0] > 0.0 &&
+        msg->orientation_covariance[0] < kTightTiltVar) {
+      warned_tight_orientation_ = true;
+      RCLCPP_WARN(get_logger(),
+        "Fusing IMU roll/pitch declared at %.2f deg 1-sigma. If this orientation is derived "
+        "from the IMU's own accelerometer (not a gyro-integrated attitude), that double-counts "
+        "the accelerometer and is wrong by atan(a/g) while accelerating. Check with "
+        "tools/bag_report.py, or set orientation_covariance[0] to -1 to stop fusing it.",
+        std::sqrt(msg->orientation_covariance[0]) * 180.0 / M_PI);
+    }
     fc_->update_imu_orientation(
       t, roll, pitch, yaw,
       msg->orientation_covariance.data());
@@ -3705,6 +3721,9 @@ private:
   // read 0 while messages are skipped. Logged once a minute so a harness that kills
   // the node with SIGKILL still has the last count.
   long cb_imu_ = 0, cb_enc_ = 0, cb_gnss_ = 0;
+  bool warned_tight_orientation_ = false;
+  // (1 deg)^2 in rad^2: tighter than accelerometer-only tilt can be while accelerating.
+  static constexpr double kTightTiltVar = (M_PI / 180.0) * (M_PI / 180.0);
 
   // Extracts heading 1-sigma in degrees from the filter covariance via quaternion Jacobian.
   bool heading_announced_ = false;

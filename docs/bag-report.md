@@ -85,12 +85,14 @@ atan(a/g) every time the robot accelerates or brakes, and the message still clai
 fraction of a degree. The check compares the reported tilt with the accelerometer's tilt
 while the robot accelerates; a real attitude estimate departs from it, this kind does not.
 
-It is not hypothetical. On the NCLT dataset's own IMU it reads: while accelerating, the
-reported roll/pitch track the accelerometer's tilt to a median 0.08 deg where a real
-estimate would differ by about 4.3 deg, at a claimed 0.57 deg 1-sigma. Fused at that
-confidence it put FusionCore into an 800 s lock-out on one sequence (178.2 m ATE); at a
-1.8 deg covariance the same run scored 56.0 m. The fix is on the IMU side: report a
-covariance that covers the acceleration error, or set `orientation_covariance[0]` to -1.
+It is not hypothetical, and the first instance was ours. FusionCore's own NCLT dataset
+player published the dataset's AHRS roll/pitch at 0.57 deg 1-sigma. Those angles track the
+accelerometer's tilt to a median 0.08 deg even while accelerating, where a real attitude
+estimate would differ by about 4.3 deg, so the player was declaring the accelerometer a
+second time as confident attitude. That put FusionCore into an 800 s GPS lock-out on one
+sequence. The player now marks it unfusable. The fix in general is on the publishing side:
+report a covariance that covers the acceleration error, or set `orientation_covariance[0]`
+to -1. The node also warns once when it fuses roll/pitch declared tighter than 1 deg.
 
 ## What it will not tell you
 

@@ -2789,7 +2789,18 @@ The README is NOT edited yet: its standing instruction says no new claim may con
 "does not beat raw GNSS on any NCLT sequence", and this measurement does, for the opt-in
 setting on two sequences. That wording is Manan's call.
 
-## 2026-10-25  Why the IMU orientation input causes the lock-out: it is the accelerometer, claimed at 0.57 deg
+## 2026-10-25  Why the IMU orientation input causes the lock-out: it is the accelerometer, which OUR player declared at 0.57 deg
+
+> **Attribution, corrected the same day.** The 0.57 deg was declared by FusionCore's own
+> `nclt_player.py`, not by the dataset. The dataset's AHRS roll/pitch simply are the
+> accelerometer's tilt, which is what an accelerometer-referenced tilt is, not a defect in
+> the data. Declaring it as 0.57-deg attitude was our configuration choice, the same lesson
+> as the earlier "dataset bug" that was the reader. The variance sweep below was observed on
+> 2012-01-08, a SPENT holdout sequence: it is diagnosis, not validation, and it did not choose
+> the fix. The fix chosen is principled rather than tuned: the player now publishes the
+> orientation with `orientation_covariance[0] = -1`, because it is derived from the same
+> accelerometer the node already fuses, so fusing it at any covariance double-counts. The
+> node also warns once when it fuses roll/pitch declared tighter than 1 deg.
 
 Checked as suggested: in quasi-static stretches of 2012-01-08 (5464 samples), the reported
 roll/pitch match the accelerometer's gravity tilt to 0.00 deg median, 0.00 MAD, corr 1.000.
@@ -2819,3 +2830,27 @@ The benchmark-side fix is the player's covariance, which is part of the measurem
 and changes every node number, so it is a decision rather than an edit; with the NCLT
 holdout spent, its effect on accuracy cannot be graded on NCLT any more. This closes the
 NCLT line of work for now.
+
+## 2026-10-25  FusionCore against robot_localization, same runs, one scorer (old player, interim)
+
+robot_localization's NCLT config (`fusioncore_datasets/config/rl_ekf.yaml`, `imu0_config` row 2)
+ALSO fuses roll/pitch from the IMU orientation message, so in every node run so far both
+filters fused the player's 0.57-deg accelerometer-derived tilt. The player fix above changes
+robot_localization's input too (it honours `orientation_covariance[0] = -1`), so the
+current-state comparison needs fresh node runs on the corrected player. Until then, the
+shipped-config node runs from 2026-10-22/23, each filter's trajectory from the SAME run,
+scored through hardware/ate_tum.py (full trajectory, ATE RMSE 3D):
+
+    sequence     FusionCore   RL-EKF    better        old player, both fusing the tilt
+    2012-01-08      178.808   22.900    RL 7.81x
+    2012-03-31       25.887  160.482    FC 6.20x
+    2012-05-11        9.605    8.936    RL 1.07x
+    2012-09-28       18.603   91.766    FC 4.93x
+    2012-10-28       17.220   25.117    FC 1.46x
+    2012-11-04       68.232   60.704    RL 1.12x
+    2012-12-01       15.948   12.153    RL 1.31x
+    2013-02-23       16.934   82.425    FC 4.87x
+
+Four each on these eight. The other four sequences have only frozen-profile node runs on
+disk, so they are not in a shipped-against-shipped table. Not a public claim until the
+corrected-player twelve exist.

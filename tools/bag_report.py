@@ -569,8 +569,9 @@ def check_imu_orientation(series):
        estimate departs from accelerometer tilt by about atan(a/g), and this one does
        not. Fused with a tight covariance it double-counts the accelerometer and hands
        the filter a confident wrong tilt every time the robot speeds up or brakes. On
-       NCLT 2012-01-08 that input, at 0.57 deg 1-sigma, put the filter into an 800 s
-       lock-out (178.2 m ATE); at 1.8 deg it was 56.0 m.
+       NCLT this check fired on FusionCore's own dataset player, which declared the
+       dataset's accelerometer-derived tilt at 0.57 deg 1-sigma; that put the filter into
+       an 800 s lock-out on 2012-01-08. The player no longer fuses it.
     """
     imu = [m for m in (series.get("imu") or []) if m.get("q") and m.get("ax") is not None]
     if len(imu) < 200:
@@ -619,11 +620,12 @@ def check_imu_orientation(series):
                 f"While accelerating ({len(accel)} samples, |dv/dt| > 0.3 m/s^2) the "
                 f"reported roll/pitch track the accelerometer's tilt to a median "
                 f"{med:.2f} deg, where a real attitude estimate would differ by about "
-                f"{expect:.1f} deg. It is not acceleration-compensated, and the IMU "
-                f"claims {sigma_deg:.2f} deg 1-sigma for it.",
+                f"{expect:.1f} deg. It is not acceleration-compensated, and the message "
+                f"declares {sigma_deg:.2f} deg 1-sigma for it.",
                 "Report a covariance that covers the acceleration error (a few degrees), "
                 "or set orientation_covariance[0] to -1 so FusionCore does not fuse it. "
-                "On NCLT this exact input at 0.57 deg caused an 800 s GPS lock-out."))
+                "FusionCore's own NCLT player made exactly this mistake (0.57 deg on an "
+                "accelerometer-derived tilt) and it caused an 800 s GPS lock-out."))
         elif not out:
             out.append(finding("OK", "IMU orientation behaves like an attitude estimate",
                                f"While accelerating it departs from accelerometer tilt by "
