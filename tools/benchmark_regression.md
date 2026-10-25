@@ -2673,3 +2673,48 @@ current main) against replay (shipped config, same day):
 control reproduced its record to 0.47% (22.900 against 22.792), so the input is not the cause.
 The drop counter rules out lost messages on 2012-09-28 only; 2012-01-08 is untested. This
 sequence is where the node and replay disagree, and it is the place to look.
+
+## 2026-10-25  The node-versus-replay gap is explained: replay never fused the IMU orientation
+
+The node fuses the IMU's orientation on every IMU message whenever
+`orientation_covariance[0]` is not -1 (`fuse_imu_orientation_if_valid`), and the NCLT player
+publishes roll/pitch at variance 1e-4 and yaw at 1e6. `hardware/replay.cpp` deliberately
+skipped those IMUQ rows. New opt-in `imuq_rp=1` fuses them exactly as the node does (same
+RPY convention, identity imu_link per nclt_benchmark.launch.py, same covariance array); the
+default path stays byte-identical.
+
+ATE RMSE 3D (m), shipped config, node runs from 2026-10-09 (a4aae82, four DEV sequences) and
+2026-10-23 (holdout and 2012-09-28):
+
+    sequence      replay   replay+rp      node   node/replay  node/replay+rp
+    2012-01-08    52.152     178.226   178.808       3.43x          1.00x
+    2012-02-04   142.043     147.927   153.097       1.08x          1.03x
+    2012-03-31    22.279      21.200    25.887       1.16x          1.22x
+    2012-05-11     9.651       9.628     9.605       1.00x          1.00x
+    2012-06-15    78.428      81.216    82.011       1.05x          1.01x
+    2012-08-20   165.364     184.052   155.618       0.94x          0.85x
+    2012-09-28    22.805      22.499    18.603       0.82x          0.83x
+    2012-10-28    18.778      16.326    17.220       0.92x          1.05x
+    2012-11-04    54.253      65.926    68.232       1.26x          1.03x
+    2012-12-01    16.384      16.074    15.948       0.97x          0.99x
+    2013-02-23    21.377      21.340    16.934       0.79x          0.79x
+    2013-04-05    16.456      12.056    14.058       0.85x          1.17x
+
+On 2012-01-08 it is not a coincidence of two totals. Under one common alignment, median
+error by window: t+0..4100 replay 12.31 / replay+rp 12.31 / node 12.35; t+4100..5000
+**10.98 / 458.91 / 454.58**; t+5000..5700 14.26 / 14.42 / 14.46. The orientation input is
+what puts the filter into the 800 s lock-out that replay escaped (replay enters the same
+rejection run at t+4138 and coast frees it at t+4351). The paths inside the excursion still
+differ by up to 330 m, the node's arrival-order nondeterminism.
+
+The residual differences (0.79x to 1.22x on five sequences) are not yet explained; four of
+the five DEV node numbers are from an older commit and the node's own spread is 14.8%.
+
+**Consequence, stated plainly:** every replay number before today, including re-anchoring's
+3.67x and the 2026-10-23 holdout verdicts for A and C, comes from a pipeline WITHOUT the
+orientation fusion the NCLT node performs. Those numbers stand for that pipeline; they are
+not what the node does. Node-confirmed results (re-anchoring 1.86x on 2012-09-28) are
+unaffected. From now on the node-faithful pipeline is `imuq_rp=1`.
+
+On 2012-01-08, plain replay with re-anchoring on: 52.152 -> 18.569 (4 re-anchors). Not yet
+measured with imuq_rp=1.

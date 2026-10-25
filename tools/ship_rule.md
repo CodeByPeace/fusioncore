@@ -70,3 +70,16 @@ Neither ships. B was not run: it is C without the leak fix, and its DEV result (
 +9.2%) was already the one C was meant to repair. The holdout is spent for this line of work
 (rule 6), so B cannot now be tested on it either. Detail in
 tools/benchmark_regression.md, 2026-10-23.
+
+## Addendum, 2026-10-25, written and committed BEFORE any run it describes
+
+A separate line of work, so the holdout is fresh for it: **candidate R, re-anchoring on by
+default**, the shipping re-anchor configuration (`gnss.reanchor_enabled: true`, rate trigger
+only, bias trigger off: the library defaults for every other `gnss.reanchor_*` key).
+
+**Pipeline changes for R, and why:** replay with `imuq_rp=1`, which fuses the IMU orientation
+exactly as the node does. On 2026-10-25 that was shown to reproduce the node on 2012-01-08 to
+0.3% where plain replay was 3.43x off. The baseline arm is the shipped config on the same
+pipeline. Everything else in the rule (clauses 1 to 6, scoring through hardware/ate_tum.py)
+applies unchanged. R is run once on the seven holdout sequences; DEV results are reported
+alongside and cannot make it pass.
