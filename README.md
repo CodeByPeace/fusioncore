@@ -635,7 +635,7 @@ Useful if you are on PX4, a custom middleware, or an embedded loop where ROS 2 i
 
 **rtabmap_ros (merged):** included as a named demo in the official [rtabmap_ros](https://github.com/introlab/rtabmap_ros) repository. The demo runs FusionCore and `icp_odometry` in a feedback loop: FusionCore's stable odom frame seeds scan matching via `guess_frame_id`, and the ICP result returns as a second velocity source. [View the demo](https://github.com/introlab/rtabmap_ros/tree/ros2/rtabmap_demos)
 
-**Stereolabs community:** a FusionCore + ZED integration guide is posted on the Stereolabs developer forum. Under evaluation by [@privvyledge](https://github.com/privvyledge) against Wolf, TIER IV EagleEye and robot_localization on an F1/10 scale car and a full-size autonomous van.
+**Stereolabs community:** a FusionCore + ZED integration guide is posted on the Stereolabs developer forum. [@privvyledge](https://github.com/privvyledge) set out to compare FusionCore against Wolf, TIER IV EagleEye and robot_localization in May 2026 on an F1/10 scale car and a full-size van; no results have been reported back.
 
 **OpenMowerNext:** [PR #45](https://github.com/jkaflik/OpenMowerNext/pull/45) integrates FusionCore as the localization stack for a community ROS 2 mowing system, replacing robot_localization with a single lifecycle node fusing RTK GPS (u-blox F9P), IMU and wheel odometry.
 

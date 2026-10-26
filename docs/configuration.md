@@ -922,19 +922,20 @@ you asked for something specific and would not have got it.
 
 ### What it measured
 
-NCLT at 1x, ATE RMSE in metres. The fourth column is how far
-robot_localization moved on the same run: it consumes the same input and runs none of
-this code, so a control that stays put is what makes the FusionCore change
-attributable rather than merely coincident.
+NCLT at 1x through the ROS node, ATE RMSE in metres, measured 2026-10-17. The fourth column is
+how far robot_localization moved on the same run: it consumes the same input and runs none of
+this code, so a control that stays put is what makes the FusionCore change attributable
+rather than merely coincident. These runs used the dataset player as it was before
+2026-10-25, which declared the accelerometer-derived tilt as a 0.57 degree attitude (since
+corrected), so they measure the profile's direction, not current figures.
 
-| sequence | `general` | `ground_robot_flat` | control moved | change | verdict was | verdict now |
-|---|---|---|---|---|---|---|
-| 2012-06-15 | 82.011 | **32.149** | -0.05% | **-60.8%** | RL +44% | **FC +30%** |
-| 2013-04-05 | 14.058 | **9.193** | +0.50% | **-34.6%** | FC +79% | FC +86% |
-| 2012-08-20 | 155.618 | 157.591 | +0.04% | +1.3% | RL +93% | RL +93% |
-| 2012-09-28 | 18.594 | **8.872** | +11.23% | **-52.3%** | FC +77% | FC +90% |
+| sequence | `general` | `ground_robot_flat` | control moved | change |
+|---|---|---|---|---|
+| 2012-06-15 | 82.011 | **32.149** | -0.05% | **-60.8%** |
+| 2013-04-05 | 14.058 | **9.193** | +0.50% | **-34.6%** |
+| 2012-08-20 | 155.618 | 157.591 | +0.04% | +1.3% |
+| 2012-09-28 | 18.594 | **8.872** | +11.23% | **-52.3%** |
 
-2012-06-15 crosses from a loss to a win, which is the result this profile exists for.
 2012-08-20 gets slightly worse, by about 10x its own 0.13% run-to-run spread, so the
 profile is not uniformly better and this page is not going to pretend otherwise.
 
@@ -942,7 +943,7 @@ The 2012-09-28 row needs a caveat the others do not. Its control moved 11.23%, w
 would normally void the comparison, except that this sequence has a measured
 control-side spread of 11.05% of its own. So the control move is consistent with that
 sequence's noise rather than with a changed input, and the row is weaker evidence than
-the three above it. It was a win before and after either way.
+the three above it.
 
 Four of the twelve NCLT sequences have been measured with the profile and **no hardware
 bag has.** Treat these as a measured direction, not as a number your robot will
