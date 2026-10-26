@@ -91,3 +91,31 @@ alongside and cannot make it pass.
                (output-rate ratio +0.126 on 2012-12-01)
 
 Re-anchoring stays opt-in. The holdout is spent for this line.
+
+## Addendum, 2026-10-26, written and committed BEFORE either run it describes
+
+R failed the rule above. This addendum does not reopen it. It records a PRODUCT decision to be
+taken openly, and the one mechanical check that gates it.
+
+**The decision, if the check passes:** `platform.profile: ground_robot` turns on
+`gnss.reanchor_enabled`. The library default stays off. It is stated as a decision with its
+measured costs, not as a pass. From `tools/eval_20261025_results.md`, re-anchoring against the
+default on the same pipeline (replay), full trajectory: RMSE lower on 10 of 12 and higher on
+none; median higher on 4 (+0.3% to +3.0%); output-rate jitter higher on 3 (up to +0.124).
+It is a behaviour change for existing ground_robot users: CHANGELOG, version bump, release note.
+
+**The check: one ROS node run, 2012-01-08, corrected player, shipped NCLT config plus
+`gnss.reanchor_enabled: true`, 1x playback.** Its fix-time ATE RMSE (score_nclt_suite
+803c158e99ff) is compared with the replay re-anchoring figure on the same sequence, 10.899 m.
+The band is the node-over-replay ratio observed on the default arm across the eleven sequences
+of that evaluation other than 2012-06-15, which is under separate investigation: 0.849 to
+1.138. **Confirmed if the node reads 9.253 m to 12.403 m. Outside that, the preset change is
+held until after 2026-11-04**, and nothing about re-anchoring through the node is claimed.
+
+**2012-06-15 triage, from the repeat FusionCore node run that the robot_localization re-run
+produces anyway.** First run: node 24.363 m, replay 12.041 m at fix times (2.023x). Using the
+same band: a repeat at or below 13.703 m (12.041 x 1.138) reads as node nondeterminism (message
+ordering/timing) and becomes the next node-path fix; at or above 20.684 m (24.363 x 0.849) as
+systematic, something the node does differently from replay on that sequence, to be found the
+way the roll/pitch input was; in between, inconclusive, and the next step is a third run, not
+a theory.
