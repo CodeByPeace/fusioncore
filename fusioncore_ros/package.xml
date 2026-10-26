@@ -51,6 +51,12 @@
   <test_depend>ament_cmake_pytest</test_depend>
   <test_depend>launch_testing_ament_cmake</test_depend>
   <test_depend>launch_testing_ros</test_depend>
+  <!-- test_platform_profile.py drives the node through the ros2 CLI. The buildfarm installs
+       only declared deps, so without these all four of its tests fail there with no ros2. -->
+  <test_depend>ros2run</test_depend>
+  <test_depend>ros2node</test_depend>
+  <test_depend>ros2lifecycle</test_depend>
+  <test_depend>ros2param</test_depend>
 
   <export>
     <build_type>ament_cmake</build_type>

@@ -172,6 +172,12 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **The ROS buildfarm dev jobs (Humble and Jazzy) were Unstable with 5 test failures.**
+  `test_platform_profile.py` drives the node through the `ros2` CLI, and `ros2run`,
+  `ros2node`, `ros2lifecycle` and `ros2param` were never declared, so the buildfarm, which
+  installs only declared dependencies, had no `ros2` command. Reproduced locally by hiding
+  the CLI: all four of that file's tests fail. They are now `test_depend`s.
+
 - **`magnetometer.declination_rad` had the wrong sign, and the 9-axis IMU path ignored
   it.** Behaviour change for anyone who set a non-zero declination; every shipped config
   sets 0.0, so no default changes. The raw-field path computed yaw as the magnetic angle
