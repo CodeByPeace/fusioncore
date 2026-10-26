@@ -4,12 +4,22 @@ FusionCore Ground Control Dashboard
 Aerospace-grade real-time sensor fusion visualization
 """
 
+import os
 import rclpy
 from rclpy.node import Node
 from nav_msgs.msg import Odometry
 from sensor_msgs.msg import NavSatFix
 import matplotlib
-matplotlib.use('TkAgg')
+# Pick the interactive backend only when one is actually usable. Importing this
+# module must not require a display: tools/test_help_flag.py imports it to check
+# --help, and on a headless runner matplotlib.use('TkAgg') raises ImportError at
+# import time and takes the whole test file with it. MPLBACKEND, if the caller set
+# one, wins outright.
+if not os.environ.get('MPLBACKEND'):
+    try:
+        matplotlib.use('TkAgg')
+    except Exception:
+        matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 import matplotlib.gridspec as gridspec
