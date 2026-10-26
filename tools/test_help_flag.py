@@ -1,4 +1,15 @@
-"""Every tool in SCRIPTS must answer --help with its docstring and reject unknown flags."""
+"""Every tool in SCRIPTS must answer --help with its docstring and reject unknown flags.
+
+This imports each tool, so a tool that demands a display at import time takes the whole
+file down. That is not hypothetical: fusioncore_gcs.py called matplotlib.use('TkAgg') at
+module scope and turned CI red on both distros for five commits, while passing locally
+because a developer machine has a display. MPLBACKEND is set before any tool is imported,
+which every well-behaved matplotlib caller honours, and fusioncore_gcs also falls back on
+its own now. Belt and braces, because asking a tool for --help must never need a screen.
+"""
+import os
+
+os.environ.setdefault("MPLBACKEND", "Agg")
 import contextlib
 import importlib
 import importlib.util
