@@ -69,6 +69,15 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **The robot_localization benchmark config fuses IMU yaw rate only, no longer acceleration
+  or roll/pitch** (`fusioncore_datasets/config/rl_ekf.yaml`). Once the NCLT player stopped
+  supplying an attitude (orientation covariance -1), robot_localization removed gravity
+  using its own roll and pitch, which `two_d_mode` holds at zero, so platform tilt leaked
+  into the fused acceleration and the control diverged to kilometres on nine of twelve
+  sequences. The new config follows the planar wheeled-robot example in
+  robot_localization's documentation, minus its x acceleration for the same reason. The
+  rover replay launch reuses this file, so its robot_localization arm changes too.
+
 - **Scope stated explicitly: FusionCore is for outdoor wheeled ground robots that lose
   GPS.** Differential drive, skid steer, tracked or Ackermann. That is the platform every
   published number was measured on (NCLT is a wheeled Segway, the hardware runs are a

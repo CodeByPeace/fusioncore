@@ -240,7 +240,61 @@ said so for weeks.
 
 FusionCore against robot_localization on the [NCLT dataset](http://robots.engin.umich.edu/nclt/): same IMU, wheel odometry and GPS, no manual tuning, twelve full-length sequences across all seasons. RL-EKF run with chi-squared-equivalent thresholds at 99.9% confidence.
 
-> **Status, 2026-10-25, and this supersedes every dated note below it.**
+> **Status, 2026-10-26, and this supersedes every dated note below it.**
+>
+> All twelve NCLT sequences were re-run under a reporting rule committed before the run
+> started (`tools/report_rule_20261025.md`). The dataset player was corrected first: it had
+> been declaring the IMU's accelerometer-derived tilt as a 0.57 degree attitude measurement.
+> That declaration was ours, not the dataset's. It counted the accelerometer twice and made
+> the ROS node lock onto a wrong position for about 800 s on 2012-01-08 (178.808 m full
+> trajectory RMSE before the correction, 57.314 m in this run).
+>
+> Scored at GPS fix times, the shipped default does not beat raw GPS: raw GPS has the lower
+> RMSE on 11 of 12, and the twelfth, 2012-05-11, is a tie at 9.186 m against 9.187 m. With
+> opt-in re-anchoring (`gnss.reanchor_enabled`), FusionCore is lower than raw GPS on 2 of 12,
+> 2012-03-31 by 22.0% and 2012-10-28 by 5.6%, both held-out sequences never used for tuning.
+> Against the default on the same pipeline and scored over the full trajectory, re-anchoring
+> lowers RMSE on 10 of 12 and raises it on none. It also raises the median on 4 (by 0.3% to
+> 3.0%) and the output-rate jitter on 3 (by up to 0.124), which is why it is off by default.
+>
+> ATE RMSE (3D) at GPS fix times, every column on identical timestamps:
+>
+> | Sequence | Set | Raw GPS | Default, ROS node | Default, replay | Re-anchoring on, replay | Re-anchoring on, ratio to raw GPS |
+> |---|---|---|---|---|---|---|
+> | 2012-01-08 | held out | 9.883 m | 56.957 m | 50.065 m | 10.899 m | 1.103x |
+> | 2012-02-04 | dev | 57.564 m | 163.830 m | 145.629 m | 59.340 m | 1.031x |
+> | 2012-03-31 | held out | 13.825 m | 16.818 m | 16.937 m | **10.787 m** | 0.780x |
+> | 2012-05-11 | held out | 9.187 m | 9.186 m | 9.187 m | 9.187 m | 1.000x |
+> | 2012-06-15 | dev | 9.293 m | 24.363 m | 12.041 m | 12.041 m | 1.296x |
+> | 2012-08-20 | dev | 34.250 m | 160.359 m | 172.961 m | 39.790 m | 1.162x |
+> | 2012-09-28 | dev | 8.960 m | 18.883 m | 22.236 m | 10.176 m | 1.136x |
+> | 2012-10-28 | held out | 13.923 m | 15.999 m | 16.763 m | **13.150 m** | 0.944x |
+> | 2012-11-04 | held out | 20.267 m | 23.626 m | 24.512 m | 20.414 m | 1.007x |
+> | 2012-12-01 | held out | 12.681 m | 16.160 m | 16.466 m | 12.741 m | 1.005x |
+> | 2013-02-23 | held out | 15.724 m | 17.294 m | 16.951 m | 15.793 m | 1.004x |
+> | 2013-04-05 | dev | 8.624 m | 9.994 m | 10.007 m | 8.798 m | 1.020x |
+>
+> How these were produced: the ROS node at 1x playback (achieved filter rate 99.8 to
+> 103.3 Hz on every sequence) and the deterministic offline replay of the same shipped config
+> on the same input, scored by `tools/score_nclt_suite.py` (version `803c158e99ff`, printed
+> on every row) through `hardware/ate_tum.py`. Re-anchoring was run through replay only, so
+> compare it with the replay default column. The node and the replay still disagree: node
+> over replay is 0.70x to 1.14x over the full trajectory, and at fix times up to 2.0x on
+> 2012-06-15 (24.363 m against 12.041 m). That gap is not yet explained. No sequence was
+> excluded. Medians, path ratios, jitter and coverage for every arm and sequence are in
+> `tools/eval_20261025_results.md`. "Held out" sequences were never used to develop or tune
+> anything (`tools/ship_rule.md`).
+>
+> **robot_localization: a corrected re-run is pending, and the comparison table further down
+> predates it.** In this run robot_localization's config fused IMU acceleration. Once the
+> corrected player stopped supplying an attitude, robot_localization removed gravity using a
+> level attitude, so real tilt leaked into the acceleration and it diverged to kilometres on
+> nine sequences. That was our input change meeting that config, not a property of
+> robot_localization, so those numbers are withheld. All twelve are being re-run with the
+> config following robot_localization's own planar wheeled-robot example (the amendment in
+> the rule file states exactly what changed and why).
+
+> **Status, 2026-10-25. SUPERSEDED by the 2026-10-26 note above, which re-measures the same twelve sequences with the corrected player.**
 >
 > Scored at GPS fix times on all 12 NCLT sequences, the shipped default does not beat raw
 > GPS: raw GPS is better on 11 and tied (within 0.2%) on the twelfth. With opt-in
@@ -417,6 +471,11 @@ FusionCore against robot_localization on the [NCLT dataset](http://robots.engin.
 > explanation in the repository README.
 >
 > `tools/benchmark_regression.md` is the standing rule: no published number changes without a `verified` baseline entry and a clean regression check. Rows this note affects are marked † in every table on this page.
+
+**Pending, 2026-10-26: this table predates the corrected dataset player and is being
+replaced.** A re-run of robot_localization on all twelve sequences, with a corrected
+configuration, is in progress; see the 2026-10-26 status note above. Until it finishes,
+nothing in this table should be read as the current comparison.
 
 | Sequence | Season | Duration | FC ATE RMSE | RL-EKF ATE RMSE | Winner | Status |
 |---|---|---|---|---|---|---|
