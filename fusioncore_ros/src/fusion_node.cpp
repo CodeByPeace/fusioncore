@@ -390,8 +390,8 @@ public:
     // Read gnss.fix_topic as gps_msgs/GPSFix instead of sensor_msgs/NavSatFix.
     // GPSFix carries RTK_FLOAT status (unreachable via NavSatFix), separate hdop/vdop
     // from the receiver, satellites_used, and err_horz/err_vert position bounds.
-    // Required when your GNSS driver publishes gps_msgs/GPSFix (e.g. nmea_navsat_driver
-    // with fix_type=RTK_FLOAT or ublox_dgnss in GPSFix mode).
+    // Required when your GNSS driver publishes gps_msgs/GPSFix. nmea_navsat_driver does
+    // not: it publishes sensor_msgs/NavSatFix, so leave this false for it (#73).
     // Set false (default) to use sensor_msgs/NavSatFix: works with all receivers.
     declare_parameter("gnss.use_gps_fix", false);
 
